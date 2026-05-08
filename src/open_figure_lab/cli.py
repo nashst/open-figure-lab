@@ -9,6 +9,13 @@ import shutil
 import sys
 from pathlib import Path
 
+from open_figure_lab.figure_spec import (
+    format_validation_messages,
+    load_figure_spec,
+    validate_figure_spec,
+)
+from open_figure_lab.journal_presets import get_preset, list_presets
+
 
 PROJECT_DIRS = ("data", "spec", "src", "outputs", "history")
 
@@ -116,8 +123,32 @@ def cmd_qa(args: argparse.Namespace) -> int:
             print(f"- {path}", file=sys.stderr)
         return 1
 
+    result = validate_figure_spec(load_figure_spec(project / "spec" / "figure.yaml"))
+    for line in format_validation_messages(result):
+        print(line)
+    if not result.ok:
+        return 1
+
     print("QA PASS: required spec files exist")
     print("QA NOTE: semantic data integrity checks are not implemented yet")
+    return 0
+
+
+def cmd_validate(args: argparse.Namespace) -> int:
+    path = Path(args.path)
+    spec_path = path / "spec" / "figure.yaml" if path.is_dir() else path
+    result = validate_figure_spec(load_figure_spec(spec_path))
+    for line in format_validation_messages(result):
+        print(line)
+    return 0 if result.ok else 1
+
+
+def cmd_presets(args: argparse.Namespace) -> int:
+    if args.name:
+        print(json.dumps(get_preset(args.name), indent=2))
+    else:
+        for name in list_presets():
+            print(name)
     return 0
 
 
@@ -163,6 +194,14 @@ def build_parser() -> argparse.ArgumentParser:
     qa.add_argument("project", help="Figure project directory")
     qa.set_defaults(func=cmd_qa)
 
+    validate = subparsers.add_parser("validate", help="Validate a figure.yaml file or figure project")
+    validate.add_argument("path", help="Figure project directory or figure.yaml path")
+    validate.set_defaults(func=cmd_validate)
+
+    presets = subparsers.add_parser("presets", help="List or inspect journal presets")
+    presets.add_argument("name", nargs="?", help="Preset identifier to inspect")
+    presets.set_defaults(func=cmd_presets)
+
     return parser
 
 
@@ -174,4 +213,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

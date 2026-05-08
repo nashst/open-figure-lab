@@ -33,3 +33,25 @@ GitHub status:
 License:
 
 - MIT
+
+## 2026-05-08 Figure Schema + Nature Preset
+
+Changed:
+
+- Added dependency-free `figure.yaml` subset loader and schema validator.
+- Added built-in `nature` and `nature_comm` journal presets.
+- Added CLI commands: `ofl validate` and `ofl presets`.
+- Updated `ofl qa` to fail on invalid figure specs.
+- Documented the first spec contract in `docs/figure-spec.md`.
+
+Verified:
+
+- `PYTHONPATH=src python -m open_figure_lab.cli doctor`
+- `PYTHONPATH=src python -m unittest discover -s tests -v`
+- `ofl init -> ofl validate -> ofl qa` smoke flow through `python -m open_figure_lab.cli`.
+
+Open:
+
+- Replace the bootstrap YAML subset parser with PyYAML or another structured parser only after an explicit dependency decision.
+- Implement semantic data integrity QA.
+- Add the first real renderer for SOC Fig. 2 proxy validity.

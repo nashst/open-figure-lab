@@ -38,6 +38,7 @@ The first UI target, after the CLI loop works, is a local web workbench with a c
 
 - `docs/product-frame.md` - product boundaries, MVP scope, roadmap.
 - `docs/architecture.md` - system architecture and module responsibilities.
+- `docs/figure-spec.md` - first `figure.yaml` schema and validation rules.
 - `docs/version-control.md` - branch, commit, and release conventions.
 - `docs/agent-collaboration.md` - leader/agent workflow and handoff rules.
 - `src/open_figure_lab/` - minimal Python CLI skeleton.
