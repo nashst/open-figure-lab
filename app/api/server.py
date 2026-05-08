@@ -163,7 +163,10 @@ class APIHandler(SimpleHTTPRequestHandler):
 
     def _handle_static_output(self, path: str) -> None:
         filename = path.split("/outputs/", 1)[-1]
-        file_path = _get_project_root() / "outputs" / filename
+        file_path = (_get_project_root() / "outputs" / filename).resolve()
+        if not file_path.is_relative_to((_get_project_root() / "outputs").resolve()):
+            self._text_response("Forbidden", 403)
+            return
         if not file_path.exists() or not file_path.is_file():
             self._text_response("File not found", 404)
             return
