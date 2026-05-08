@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "open-figure-lab"
+version = "0.1.0"
+description = "Local-first agentic workbench for reproducible publication-grade scientific figures."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [
+  { name = "Open Figure Lab contributors" }
+]
+dependencies = []
+
+[project.scripts]
+ofl = "open_figure_lab.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+

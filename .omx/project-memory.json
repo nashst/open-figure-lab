@@ -1,0 +1,37 @@
+{
+  "project": "Open Figure Lab",
+  "updated_at": "2026-05-08",
+  "product_frame": {
+    "one_liner": "Local-first, agent-driven workbench for reproducible publication-grade scientific figures.",
+    "mvp_loop": "data -> figure spec -> skill renderer -> QA report -> revision diff -> export",
+    "first_target": "Dependency-light CLI foundation before web UI.",
+    "first_demo": "SOC Fig. 2 proxy validity multi-panel figure"
+  },
+  "agent_contract": {
+    "leader": "Codex",
+    "durable_context_files": [
+      "README.md",
+      "AGENTS.md",
+      "docs/product-frame.md",
+      "docs/architecture.md",
+      "docs/agent-collaboration.md",
+      ".omx/notepad.md",
+      "handoff.md"
+    ],
+    "handoff_file": "handoff.md"
+  },
+  "constraints": [
+    "Do not invent scientific data.",
+    "Keep data layer and visual layer separate.",
+    "Use figure.yaml as the product-facing intermediate representation.",
+    "Do not add new runtime dependencies without an explicit decision.",
+    "Keep MVP focused on scientific multi-panel figures."
+  ],
+  "next_lanes": [
+    "figure spec schema and validation",
+    "Nature journal preset",
+    "2x2 proxy validity demo renderer",
+    "publication QA report"
+  ]
+}
+
