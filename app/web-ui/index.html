@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Open Figure Lab</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="workbench">
+        <!-- Left Panel: Command -->
+        <aside class="panel panel-command">
+            <div class="panel-header">
+                <h2>Command</h2>
+            </div>
+            <div class="panel-body">
+                <div class="command-input">
+                    <input type="text" id="commandInput" placeholder="Type command..." disabled>
+                </div>
+                <div class="command-buttons">
+                    <button id="btnValidate" class="btn btn-primary">Validate</button>
+                    <button id="btnRender" class="btn btn-primary">Render</button>
+                    <button id="btnQA" class="btn btn-primary">QA</button>
+                </div>
+                <div class="command-status">
+                    <span id="statusIndicator" class="status-dot"></span>
+                    <span id="statusText">Ready</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Center Panel: Figure Preview -->
+        <main class="panel panel-preview">
+            <div class="panel-header">
+                <h2>Figure Preview</h2>
+                <button id="btnRefresh" class="btn btn-small">Refresh</button>
+            </div>
+            <div class="panel-body">
+                <div id="previewContainer" class="preview-container">
+                    <div id="previewEmpty" class="empty-state">
+                        <p>No figure rendered yet.</p>
+                        <p>Click <strong>Render</strong> to generate the figure.</p>
+                    </div>
+                    <img id="previewImage" class="preview-image" style="display: none;" alt="Figure preview">
+                </div>
+            </div>
+        </main>
+
+        <!-- Right Panel: Inspector -->
+        <aside class="panel panel-inspector">
+            <div class="panel-header">
+                <h2>Inspector</h2>
+            </div>
+            <div class="panel-body">
+                <div class="inspector-tabs">
+                    <button class="tab active" data-tab="spec">Spec</button>
+                    <button class="tab" data-tab="data">Data</button>
+                    <button class="tab" data-tab="qa">QA</button>
+                </div>
+                <div class="inspector-content">
+                    <pre id="specContent" class="code-block"></pre>
+                    <pre id="dataContent" class="code-block" style="display: none;"></pre>
+                    <div id="qaContent" class="qa-content" style="display: none;"></div>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Bottom Panel: Run Log -->
+    <footer class="panel panel-log">
+        <div class="panel-header">
+            <h2>Run Log</h2>
+            <button id="btnClearLog" class="btn btn-small">Clear</button>
+        </div>
+        <div class="panel-body">
+            <div id="runLog" class="run-log"></div>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
