@@ -28,6 +28,11 @@ workspace/user_projects/
 examples/**/outputs/
 examples/**/history/
 
+# OMX runtime output
+.omx/logs/
+.omx/state/
+.omx/metrics.json
+
 # OS / editor
 .DS_Store
 Thumbs.db
@@ -38,4 +43,3 @@ Thumbs.db
 .env
 .env.*
 !.env.example
-
