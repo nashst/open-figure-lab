@@ -23,3 +23,10 @@ Next recommended implementation lane:
 - Add journal preset tokens for Nature/Nature Communications.
 - Add one demo renderer for a 2x2 proxy-validity figure using real CSV fixtures.
 
+GitHub status:
+
+- Remote repository: `https://github.com/nashst/open-figure-lab`
+- Visibility: private
+- Branches: `main`, `develop`
+- Branch protection was attempted for `main` but GitHub rejected it for a private repository without GitHub Pro or public visibility.
+

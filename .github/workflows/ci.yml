@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run CLI tests
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = "src"
+          python -m open_figure_lab.cli doctor
+          python -m unittest discover -s tests -v
+
