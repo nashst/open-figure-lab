@@ -58,19 +58,18 @@ Recommended GitHub settings after the remote exists:
 
 ```text
 origin = https://github.com/nashst/open-figure-lab.git
-visibility = private
+visibility = public
 ```
 
-As of 2026-05-08, GitHub refused branch protection for this private repository with:
+On 2026-05-08, GitHub refused branch protection while the repository was private with:
 
 ```text
 Upgrade to GitHub Pro or make this repository public to enable this feature.
 ```
 
-Until branch protection is available, use process discipline:
+The repository was then made public so branch protection can be enabled. If branch protection is temporarily unavailable, use process discipline:
 
 - keep `main` stable
 - do implementation on `develop` or feature branches
 - open pull requests for non-trivial changes
 - rely on `.github/workflows/ci.yml` for baseline checks
-

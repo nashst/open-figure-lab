@@ -26,7 +26,10 @@ Next recommended implementation lane:
 GitHub status:
 
 - Remote repository: `https://github.com/nashst/open-figure-lab`
-- Visibility: private
+- Visibility: public
 - Branches: `main`, `develop`
-- Branch protection was attempted for `main` but GitHub rejected it for a private repository without GitHub Pro or public visibility.
+- Branch protection was initially rejected while private; repository was made public so protection can be enabled.
 
+License:
+
+- MIT

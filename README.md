@@ -49,3 +49,6 @@ The first UI target, after the CLI loop works, is a local web workbench with a c
 
 This repository is in foundation phase. The priority is to keep the product frame stable before adding heavy dependencies or a UI stack.
 
+## License
+
+MIT.
