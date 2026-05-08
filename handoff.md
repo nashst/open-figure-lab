@@ -80,3 +80,33 @@ Open:
 - Renderer styling is functional but still first-pass; next iteration should tighten typography, spacing, axis limits, and journal preflight checks.
 - Data QA checks file and field integrity, but not yet annotation/statistic provenance.
 - The demo data is illustrative, not a real SOC result export.
+
+## 2026-05-08 OpenCode - Web UI Skeleton
+
+Changed:
+
+- Added lightweight Python HTTP API server (`app/api/server.py`)
+- Added vanilla HTML/CSS/JavaScript frontend (`app/web-ui/`)
+- Added three-panel workbench layout: Command, Preview, Inspector
+- Added bottom Run Log for command execution history
+- Added API endpoints wrapping existing CLI functionality
+- Added startup script (`app/start.py`)
+- Updated development documentation
+
+Verified:
+
+- Server starts with `python app/start.py`
+- Browser opens to http://localhost:8080
+- Can view figure.yaml, data manifest, QA report in Inspector
+- Can click Validate/Render/QA buttons and see output in Run Log
+- Can preview rendered figure (soc_proxy_fig2.png)
+- Existing CLI tests still pass
+
+Open:
+
+- No real LLM integration yet (command input disabled)
+- No WebSocket for real-time updates
+- No project switching (hardcoded to soc_proxy_fig2)
+- No file editing capabilities
+- No theme switching
+- Frontend could be enhanced with better error handling
