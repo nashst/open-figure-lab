@@ -15,6 +15,8 @@ from open_figure_lab.figure_spec import (
     validate_figure_spec,
 )
 from open_figure_lab.journal_presets import get_preset, list_presets
+from open_figure_lab.data_qa import format_data_qa_messages, run_data_qa, write_qa_report
+from open_figure_lab.renderers import SUPPORTED_FORMATS, render_project
 
 
 PROJECT_DIRS = ("data", "spec", "src", "outputs", "history")
@@ -104,8 +106,16 @@ def cmd_render(args: argparse.Namespace) -> int:
         print(f"Missing figure spec: {figure_spec}", file=sys.stderr)
         return 1
 
-    print(f"Render placeholder for {project}")
-    print("Next implementation: parse figure.yaml, render panels, export SVG/PDF/PNG.")
+    result = validate_figure_spec(load_figure_spec(figure_spec))
+    for line in format_validation_messages(result):
+        print(line)
+    if not result.ok:
+        return 1
+
+    formats = tuple(args.format or SUPPORTED_FORMATS)
+    outputs = render_project(project, formats)
+    for output in outputs:
+        print(f"Wrote {output}")
     return 0
 
 
@@ -129,8 +139,15 @@ def cmd_qa(args: argparse.Namespace) -> int:
     if not result.ok:
         return 1
 
+    data_result = run_data_qa(project)
+    for line in format_data_qa_messages(data_result):
+        print(line)
+    report_path = write_qa_report(project, result, data_result)
+    print(f"QA report: {report_path}")
+    if not data_result.ok:
+        return 1
+
     print("QA PASS: required spec files exist")
-    print("QA NOTE: semantic data integrity checks are not implemented yet")
     return 0
 
 
@@ -188,6 +205,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     render = subparsers.add_parser("render", help="Render a figure project")
     render.add_argument("project", help="Figure project directory")
+    render.add_argument("--format", action="append", choices=SUPPORTED_FORMATS, help="Output format. Repeat to select multiple formats. Defaults to svg, pdf, and png.")
     render.set_defaults(func=cmd_render)
 
     qa = subparsers.add_parser("qa", help="Run basic QA on a figure project")

@@ -55,3 +55,28 @@ Open:
 - Replace the bootstrap YAML subset parser with PyYAML or another structured parser only after an explicit dependency decision.
 - Implement semantic data integrity QA.
 - Add the first real renderer for SOC Fig. 2 proxy validity.
+
+## 2026-05-08 SOC Fig. 2 Renderer
+
+Changed:
+
+- Added a runnable `examples/soc_proxy_fig2` package with four CSV inputs and a 2x2 `figure.yaml`.
+- Added a matplotlib renderer for lollipop, AUC dotplot, precision lift, and decile curve panels.
+- Added `ofl render` output for SVG/PDF/PNG.
+- Added data QA for panel data files and required CSV fields.
+- Added `qa_report.md` generation under figure project outputs.
+- Added matplotlib as the first runtime dependency and updated CI to install the package before tests.
+
+Verified:
+
+- `PYTHONPATH=src python -m open_figure_lab.cli validate examples/soc_proxy_fig2`
+- `PYTHONPATH=src python -m open_figure_lab.cli qa examples/soc_proxy_fig2`
+- `PYTHONPATH=src python -m open_figure_lab.cli render examples/soc_proxy_fig2`
+- `PYTHONPATH=src python -m unittest discover -s tests -v`
+- Visual inspection of `examples/soc_proxy_fig2/outputs/soc_proxy_fig2.png`.
+
+Open:
+
+- Renderer styling is functional but still first-pass; next iteration should tighten typography, spacing, axis limits, and journal preflight checks.
+- Data QA checks file and field integrity, but not yet annotation/statistic provenance.
+- The demo data is illustrative, not a real SOC result export.

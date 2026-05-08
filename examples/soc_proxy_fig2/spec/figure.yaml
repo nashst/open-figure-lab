@@ -1,0 +1,50 @@
+figure:
+  id: soc_proxy_fig2
+  journal_preset: nature
+  canvas:
+    width_mm: 183
+    height_mm: 125
+  typography:
+    font_family: Arial
+    base_size_pt: 6.5
+  layout:
+    type: grid
+    rows: 2
+    cols: 2
+  panels:
+    - id: A
+      type: correlation_lollipop
+      title: Proxy rank correlations
+      data: proxy_validity_correlations.csv
+      x: spearman_rho
+      y: proxy
+      reference_line: 0
+      x_label: Spearman rho
+      color: "#2F5D8C"
+    - id: B
+      type: auc_dotplot
+      title: Top-SOCD detection
+      data: proxy_validity_auc.csv
+      x: auc
+      y: proxy
+      baseline: 0.5
+      x_label: AUC
+      color: "#2F5D8C"
+    - id: C
+      type: precision_lift
+      title: Precision lift at top k
+      data: proxy_validity_precision_lift.csv
+      x: top_k_percent
+      y: lift
+      x_label: Top-k proxy quantile (%)
+      y_label: Precision lift
+      color: "#4C8A62"
+    - id: D
+      type: decile_curve
+      title: Decile response
+      data: proxy_validity_deciles.csv
+      x: proxy_decile
+      y: mean_socd_0_30
+      x_label: Proxy decile
+      y_label: Mean SOCD 0-30 cm
+      color: "#4C8A62"

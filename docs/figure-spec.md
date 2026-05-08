@@ -50,6 +50,30 @@ figure:
 - `nature`
 - `nature_comm`
 
+## Current Rendered Panel Types
+
+- `correlation_lollipop`
+- `auc_dotplot`
+- `precision_lift`
+- `decile_curve`
+
+Each rendered panel must declare:
+
+- `id`
+- `type`
+- `data`
+- `x`
+- `y`
+
+Optional first-renderer fields:
+
+- `title`
+- `x_label`
+- `y_label`
+- `color`
+- `baseline` for `auc_dotplot`
+- `reference_line` for `correlation_lollipop`
+
 Inspect presets with:
 
 ```powershell
@@ -64,9 +88,22 @@ $env:PYTHONPATH = "src"
 python -m open_figure_lab.cli validate path\to\figure_project
 ```
 
+Render a project with:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m open_figure_lab.cli render examples/soc_proxy_fig2
+```
+
+Run data QA with:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m open_figure_lab.cli qa examples/soc_proxy_fig2
+```
+
 ## Parser Boundary
 
 The foundation parser supports the subset used by project specs: nested mappings, lists of mappings, inline empty lists, quoted strings, numbers, booleans, and nulls.
 
 When the renderer lane starts, introduce PyYAML or another structured parser only through an explicit dependency decision.
-

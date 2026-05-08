@@ -12,7 +12,9 @@ license = { text = "MIT" }
 authors = [
   { name = "Open Figure Lab contributors" }
 ]
-dependencies = []
+dependencies = [
+  "matplotlib>=3.8",
+]
 
 [project.scripts]
 ofl = "open_figure_lab.cli:main"

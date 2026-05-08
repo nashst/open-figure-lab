@@ -1,0 +1,11 @@
+theme:
+  name: nature_minimal
+  background: white
+  font_family: Arial
+  colors:
+    primary: "#2F5D8C"
+    secondary: "#4C8A62"
+    neutral: "#4D4D4D"
+  line_width_pt:
+    axis: 0.5
+    data: 0.7

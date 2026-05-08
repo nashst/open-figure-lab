@@ -41,3 +41,20 @@ Future test layers:
 - QA report fixtures
 - web UI browser verification
 
+## First Demo Loop
+
+The first real product loop lives in `examples/soc_proxy_fig2`.
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m open_figure_lab.cli validate examples/soc_proxy_fig2
+python -m open_figure_lab.cli render examples/soc_proxy_fig2
+python -m open_figure_lab.cli qa examples/soc_proxy_fig2
+```
+
+Expected generated outputs:
+
+- `examples/soc_proxy_fig2/outputs/soc_proxy_fig2.svg`
+- `examples/soc_proxy_fig2/outputs/soc_proxy_fig2.pdf`
+- `examples/soc_proxy_fig2/outputs/soc_proxy_fig2.png`
+- `examples/soc_proxy_fig2/outputs/qa_report.md`

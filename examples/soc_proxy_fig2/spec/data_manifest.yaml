@@ -1,0 +1,18 @@
+data_manifest:
+  project: soc_proxy_fig2
+  sources:
+    - path: data/proxy_validity_correlations.csv
+      role: panel_a
+      description: Spearman rank correlations between candidate aboveground proxies and SOCD.
+    - path: data/proxy_validity_auc.csv
+      role: panel_b
+      description: AUC values for detecting high-SOCD observations from aboveground proxies.
+    - path: data/proxy_validity_precision_lift.csv
+      role: panel_c
+      description: Precision lift across top-k proxy quantiles.
+    - path: data/proxy_validity_deciles.csv
+      role: panel_d
+      description: Mean SOCD response by proxy decile.
+  rules:
+    - All plotted values must come from listed data sources or recorded computations.
+    - Visual revisions must not modify data files.
