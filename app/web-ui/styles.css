@@ -1,0 +1,349 @@
+/* Open Figure Lab - Workbench Styles */
+
+:root {
+    --bg: #1a1a1a;
+    --surface: #242424;
+    --border: #333;
+    --text: #e0e0e0;
+    --text-muted: #888;
+    --primary: #2F5D8C;
+    --success: #4C8A62;
+    --error: #c94444;
+
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+}
+
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    height: 100%;
+    overflow: hidden;
+}
+
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+/* ---- Workbench Layout ---- */
+
+.workbench {
+    display: flex;
+    height: calc(100vh - 180px);
+}
+
+/* ---- Panels ---- */
+
+.panel {
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--border);
+}
+
+.panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.panel-header h2 {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+}
+
+.panel-body {
+    flex: 1;
+    overflow: auto;
+    padding: 10px;
+}
+
+/* ---- Left Panel: Command ---- */
+
+.panel-command {
+    width: 240px;
+    flex-shrink: 0;
+}
+
+.command-input input {
+    width: 100%;
+    padding: 6px 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    outline: none;
+}
+
+.command-input input:focus {
+    border-color: var(--primary);
+}
+
+.command-input input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.command-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.command-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* ---- Center Panel: Figure Preview ---- */
+
+.panel-preview {
+    flex: 1;
+    min-width: 0;
+}
+
+.preview-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+}
+
+.preview-image {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.empty-state {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+    line-height: 1.8;
+}
+
+.empty-state strong {
+    color: var(--text);
+}
+
+/* ---- Right Panel: Inspector ---- */
+
+.panel-inspector {
+    width: 320px;
+    flex-shrink: 0;
+}
+
+.inspector-tabs {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 10px;
+}
+
+.tab {
+    flex: 1;
+    padding: 5px 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    text-align: center;
+}
+
+.tab:hover {
+    color: var(--text);
+    border-color: #444;
+}
+
+.tab.active {
+    color: var(--text);
+    background: var(--surface);
+    border-color: var(--primary);
+}
+
+.inspector-content {
+    flex: 1;
+    overflow: auto;
+}
+
+.code-block {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-all;
+    overflow: auto;
+    max-height: 100%;
+}
+
+.qa-content {
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+/* ---- Bottom Panel: Run Log ---- */
+
+.panel-log {
+    height: 180px;
+    flex-shrink: 0;
+    border-top: 1px solid var(--border);
+}
+
+.run-log {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text-muted);
+    overflow-y: auto;
+    height: 100%;
+}
+
+.log-entry {
+    padding: 2px 0;
+    display: flex;
+    gap: 8px;
+}
+
+.log-entry .log-time {
+    color: var(--text-muted);
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.log-entry .log-msg {
+    color: var(--text);
+}
+
+.log-entry.log-error .log-msg {
+    color: var(--error);
+}
+
+.log-entry.log-success .log-msg {
+    color: var(--success);
+}
+
+/* ---- Buttons ---- */
+
+.btn {
+    padding: 6px 12px;
+    background: var(--primary);
+    border: 1px solid transparent;
+    border-radius: 3px;
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: center;
+    line-height: 1;
+}
+
+.btn:hover {
+    background: #3a6f9e;
+}
+
+.btn:active {
+    background: #244b72;
+}
+
+.btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.btn-small {
+    padding: 3px 8px;
+    font-size: 11px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+}
+
+.btn-small:hover {
+    color: var(--text);
+    border-color: #555;
+    background: transparent;
+}
+
+/* ---- Status Dot ---- */
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--success);
+    flex-shrink: 0;
+}
+
+.status-dot.running {
+    background: var(--primary);
+    animation: pulse 1.2s ease-in-out infinite;
+}
+
+.status-dot.error {
+    background: var(--error);
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+}
+
+/* ---- Scrollbar ---- */
+
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* ---- Utility ---- */
+
+.panel-body {
+    scrollbar-width: thin;
+    scrollbar-color: #444 transparent;
+}
