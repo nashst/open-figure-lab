@@ -83,10 +83,10 @@
         </div>
 
         <nav class="rail-nav" aria-label="Primary">
-            <button class="rail-item active" type="button">Workspace</button>
-            <button class="rail-item" type="button">Figures</button>
-            <button class="rail-item" type="button">Data</button>
-            <button class="rail-item" type="button">Skills</button>
+            <button class="rail-item active" data-nav="workspace" type="button">Workspace</button>
+            <button class="rail-item" data-nav="figures" type="button">Figures</button>
+            <button class="rail-item" data-nav="data" type="button">Data</button>
+            <button class="rail-item" data-nav="skills" type="button">Skills</button>
         </nav>
 
         <div class="project-card">
@@ -102,8 +102,8 @@
         </div>
 
         <div class="rail-footer">
-            <button class="rail-item" type="button">Settings</button>
-            <button class="rail-item" type="button">Handoff</button>
+            <button class="rail-item planned" data-planned="Settings panel is not implemented yet." type="button">Settings <span>Planned</span></button>
+            <button class="rail-item planned" data-planned="Handoff viewer is not implemented yet." type="button">Handoff <span>Planned</span></button>
         </div>
     </aside>
 
@@ -121,13 +121,49 @@
             </div>
         </header>
 
+        <section class="capability-panel" aria-label="Development status">
+            <div class="capability-head">
+                <div>
+                    <div class="eyebrow">Build State</div>
+                    <h2>What works now</h2>
+                </div>
+                <span id="buildStateSummary" class="build-state-summary">Checking local API...</span>
+            </div>
+            <div class="capability-grid">
+                <div class="capability-item">
+                    <span>Spec</span>
+                    <strong id="capSpec">Loading</strong>
+                </div>
+                <div class="capability-item">
+                    <span>Data Manifest</span>
+                    <strong id="capData">Loading</strong>
+                </div>
+                <div class="capability-item">
+                    <span>Preview</span>
+                    <strong id="capPreview">Loading</strong>
+                </div>
+                <div class="capability-item">
+                    <span>QA Report</span>
+                    <strong id="capQA">Loading</strong>
+                </div>
+                <div class="capability-item">
+                    <span>Skills</span>
+                    <strong id="capSkills">Loading</strong>
+                </div>
+                <div class="capability-item">
+                    <span>Agent Runs</span>
+                    <strong id="capAgentRuns">Ready</strong>
+                </div>
+            </div>
+        </section>
+
         <section class="workspace-grid">
             <section class="canvas-panel" aria-label="Figure preview">
                 <div class="canvas-toolbar">
                     <div class="toolbar-group">
                         <button class="tool-button active" type="button" title="Select">Select</button>
-                        <button class="tool-button" type="button" title="Pan">Pan</button>
-                        <button class="tool-button" type="button" title="Measure">Measure</button>
+                        <button class="tool-button planned" data-planned="Canvas pan is not implemented yet." type="button" title="Pan">Pan <span>Planned</span></button>
+                        <button class="tool-button planned" data-planned="Canvas measurement is not implemented yet." type="button" title="Measure">Measure <span>Planned</span></button>
                     </div>
                     <div class="toolbar-group">
                         <button id="btnRefresh" class="tool-button" type="button">Refresh preview</button>

@@ -282,3 +282,39 @@ Open:
 - The skill toggle UI is minimal; a future pass could add skill descriptions as tooltips or a dedicated Skills panel.
 - The injected prompt preview is truncated to 2000 chars in the run record to avoid excessive storage; the actual prompt sent to the agent is uncapped.
 - Reviewer correction: project context now points agents to the real QA artifact, `outputs/qa_report.md`.
+
+## 2026-05-09 Codex - Visible Product State and Placeholder Boundaries
+
+Changed:
+
+- Added a Build State panel to the Lab workspace so the page shows which product surfaces are currently live:
+  - Spec
+  - Data Manifest
+  - Preview
+  - QA Report
+  - Skills
+  - Agent Runs
+- Wired the panel to existing API/data loading paths so it updates as spec, data, preview, QA, skills, and agent runs load or fail.
+- Converted future-only controls into explicit `Planned` controls instead of leaving them as apparently usable buttons:
+  - Canvas Pan
+  - Canvas Measure
+  - Settings
+  - Handoff
+- Added basic left-rail navigation behavior:
+  - Workspace focuses the workspace/log.
+  - Figures refreshes the preview.
+  - Data switches the inspector to the Data tab.
+  - Skills logs the currently active injected skills.
+- Kept Validate, Render, QA, Refresh preview, Send, Cancel, skill toggles, project/agent/model selection, and tab switching as the currently functional interaction set.
+
+Verified:
+
+- `node --check app\web-ui\app.js`
+- `python -m py_compile app\api\server.py app\start.py`
+- `PYTHONPATH=src python -m unittest discover -s tests -p "test*.py" -v` (92 tests, all pass)
+- HTTP smoke confirmed served HTML/JS include `capability-panel`, `Planned`, `handleNav`, and `updateCapability`.
+
+Open:
+
+- The browser automation plugin timed out in the previous pass, so visual screenshot QA was not collected.
+- Future work should replace the lightweight status panel with a real milestone/task surface once the product flow stabilizes.

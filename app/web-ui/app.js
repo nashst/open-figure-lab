@@ -62,6 +62,15 @@ class OpenFigureLabApp {
         this.btnCancelRun = document.getElementById("btnCancelRun");
         this.agentThread = document.querySelector(".agent-thread");
         this.skillsList = document.getElementById("skillsList");
+        this.navItems = document.querySelectorAll("[data-nav]");
+        this.plannedButtons = document.querySelectorAll("[data-planned]");
+        this.buildStateSummary = document.getElementById("buildStateSummary");
+        this.capSpec = document.getElementById("capSpec");
+        this.capData = document.getElementById("capData");
+        this.capPreview = document.getElementById("capPreview");
+        this.capQA = document.getElementById("capQA");
+        this.capSkills = document.getElementById("capSkills");
+        this.capAgentRuns = document.getElementById("capAgentRuns");
     }
 
     bindEvents() {
@@ -99,6 +108,12 @@ class OpenFigureLabApp {
         });
         this.btnSendPrompt.addEventListener("click", () => this.sendAgentPrompt());
         this.btnCancelRun.addEventListener("click", () => this.cancelAgentRun());
+        this.navItems.forEach((item) => {
+            item.addEventListener("click", () => this.handleNav(item));
+        });
+        this.plannedButtons.forEach((button) => {
+            button.addEventListener("click", () => this.showPlanned(button.dataset.planned));
+        });
         this.commandInput.addEventListener("keydown", (e) => {
             if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -156,8 +171,10 @@ class OpenFigureLabApp {
                 this.skills.filter(s => s.enabled).map(s => s.id)
             );
             this.renderSkills();
+            this.updateCapability("skills", this.skills.length > 0 ? `${this.skills.length} loaded` : "Missing", this.skills.length > 0);
         } catch (err) {
             console.error("Failed to load skills:", err);
+            this.updateCapability("skills", "Failed", false);
         }
     }
 
@@ -313,6 +330,7 @@ class OpenFigureLabApp {
         this.addLogEntry("Workbench initialized", "output");
         this.addLogEntry(`Project: ${this.projectName}`, "command");
         this.addLogEntry(`Agent runtime: ${selected.name} / ${this.selectedModel}`, "command");
+        this.refreshCapabilitySummary();
     }
 
     getSelectedAgent() {
@@ -343,8 +361,10 @@ class OpenFigureLabApp {
             const res = await fetch(`${this.apiBase}/api/spec`);
             const data = await res.json();
             this.specContent.textContent = res.ok && data.content ? data.content : `# ${data.error || "No spec found"}`;
+            this.updateCapability("spec", res.ok && data.content ? "Loaded" : "Missing", res.ok && data.content);
         } catch (err) {
             this.specContent.textContent = `# Failed to load spec: ${err.message}`;
+            this.updateCapability("spec", "Failed", false);
         }
     }
 
@@ -353,8 +373,10 @@ class OpenFigureLabApp {
             const res = await fetch(`${this.apiBase}/api/data-manifest`);
             const data = await res.json();
             this.dataContent.textContent = res.ok && data.content ? data.content : `# ${data.error || "No data manifest found"}`;
+            this.updateCapability("data", res.ok && data.content ? "Loaded" : "Missing", res.ok && data.content);
         } catch (err) {
             this.dataContent.textContent = `# Failed to load data manifest: ${err.message}`;
+            this.updateCapability("data", "Failed", false);
         }
     }
 
@@ -364,11 +386,14 @@ class OpenFigureLabApp {
             const data = await res.json();
             if (res.ok && data.content) {
                 this.renderQAReport(data.content);
+                this.updateCapability("qa", "Loaded", true);
             } else {
                 this.qaContent.innerHTML = '<p class="qa-line">No QA report. Run QA first.</p>';
+                this.updateCapability("qa", "Not run", false);
             }
         } catch (err) {
             this.qaContent.innerHTML = `<p class="qa-error">Failed to load: ${this.escapeHtml(err.message)}</p>`;
+            this.updateCapability("qa", "Failed", false);
         }
     }
 
@@ -399,11 +424,13 @@ class OpenFigureLabApp {
             this.previewImage.style.display = "block";
             this.previewEmpty.style.display = "none";
             this.previewInfo.textContent = `${this.projectName}.png`;
+            this.updateCapability("preview", "Loaded", true);
         };
         this.previewImage.onerror = () => {
             this.previewImage.style.display = "none";
             this.previewEmpty.style.display = "flex";
             this.previewInfo.textContent = "No output loaded";
+            this.updateCapability("preview", "Missing", false);
         };
         this.previewImage.src = imgUrl;
     }
@@ -531,6 +558,7 @@ class OpenFigureLabApp {
             this.lastEventId = 0;
             this.pollRetries = 0;
             this.addLogEntry(`Run ${data.id} created — ${data.status}`, "command");
+            this.updateCapability("agentRuns", "Running", true);
             this.setStatus("running", `Agent running (${data.id})`);
 
             // Start polling
@@ -711,6 +739,7 @@ class OpenFigureLabApp {
         this.lastEventId = 0;
         this.pollRetries = 0;
         this.setAgentUIState(false);
+        this.updateCapability("agentRuns", reason === "completed" ? "Ready" : reason, reason !== "error" && reason !== "failed");
     }
 
     async cancelAgentRun() {
@@ -759,6 +788,58 @@ class OpenFigureLabApp {
             return text;
         }
         return text.slice(0, maxChars) + "\n\n[truncated — output exceeds " + maxChars + " characters]";
+    }
+
+    handleNav(item) {
+        this.navItems.forEach((nav) => nav.classList.remove("active"));
+        item.classList.add("active");
+        const target = item.dataset.nav;
+        if (target === "workspace") {
+            this.addLogEntry("Workspace focused", "output");
+            return;
+        }
+        if (target === "figures") {
+            this.loadPreview();
+            this.addLogEntry("Figure preview focused", "output");
+            return;
+        }
+        if (target === "data") {
+            const tab = document.querySelector('.tab[data-tab="data"]');
+            if (tab) this.switchTab(tab);
+            this.addLogEntry("Data manifest focused", "output");
+            return;
+        }
+        if (target === "skills") {
+            this.addLogEntry(`Skills active: ${Array.from(this.selectedSkillIds).join(", ") || "none"}`, "output");
+        }
+    }
+
+    showPlanned(message) {
+        const text = message || "This control is planned but not implemented yet.";
+        this.addLogEntry(text, "output");
+        this.setStatus("ready", "Planned");
+    }
+
+    updateCapability(key, text, ok) {
+        const node = {
+            spec: this.capSpec,
+            data: this.capData,
+            preview: this.capPreview,
+            qa: this.capQA,
+            skills: this.capSkills,
+            agentRuns: this.capAgentRuns,
+        }[key];
+        if (!node) return;
+        node.textContent = text;
+        node.className = ok ? "cap-ok" : "cap-warn";
+        this.refreshCapabilitySummary();
+    }
+
+    refreshCapabilitySummary() {
+        if (!this.buildStateSummary) return;
+        const values = [this.capSpec, this.capData, this.capPreview, this.capQA, this.capSkills].filter(Boolean);
+        const okCount = values.filter((node) => node.className === "cap-ok").length;
+        this.buildStateSummary.textContent = `${okCount}/${values.length} project surfaces loaded`;
     }
 
     async refreshAfterAgentRun() {
