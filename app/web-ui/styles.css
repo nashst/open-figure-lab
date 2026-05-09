@@ -940,6 +940,87 @@ h2 {
     border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border));
 }
 
+/* Verification status */
+.verification-status {
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-lg);
+    padding: 10px;
+    font-size: 12px;
+    margin-top: 8px;
+}
+
+.verification-header {
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.verification-passed {
+    color: var(--green);
+}
+
+.verification-failed {
+    color: var(--error);
+}
+
+.verification-running {
+    color: var(--primary);
+}
+
+.verification-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.verification-step {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.step-icon {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+}
+
+.step-pass .step-icon {
+    background: var(--green-soft);
+    color: var(--green);
+    border: 1px solid color-mix(in srgb, var(--green) 30%, var(--border));
+}
+
+.step-fail .step-icon {
+    background: var(--error-soft);
+    color: var(--error);
+    border: 1px solid color-mix(in srgb, var(--error) 30%, var(--border));
+}
+
+.step-name {
+    font-family: var(--mono);
+    font-size: 12px;
+}
+
+.step-error {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--error);
+    padding: 4px 8px;
+    background: var(--error-soft);
+    border-radius: var(--radius);
+    margin-left: 24px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 120px;
+    overflow-y: auto;
+}
+
 .command-box {
     padding: 12px;
     border-top: 1px solid var(--border-soft);

@@ -318,3 +318,45 @@ Open:
 
 - The browser automation plugin timed out in the previous pass, so visual screenshot QA was not collected.
 - Future work should replace the lightweight status panel with a real milestone/task surface once the product flow stabilizes.
+
+## 2026-05-09 Codex - Post-Run Verification QA Loop
+
+Changed:
+
+- Added `_run_verification_steps(project_name, run_id)` to `app/api/server.py` that sequentially runs validate -> render -> qa after agent completion.
+- Modified `_finalize_run` to trigger verification only when agent exit code is 0 (success).
+- Run records now include three new fields:
+  - `verificationStatus`: `not_run | running | passed | failed`
+  - `verificationSteps`: array of `{name, success, stdout, stderr, returncode}` for each step
+  - `qaReportPath`: relative path to `outputs/qa_report.md` when available
+- Added four new SSE event types:
+  - `verification_started`: emitted when verification begins
+  - `verification_step`: emitted per step with `{step, status, returncode}` in detail
+  - `verification_passed`: emitted when all three steps succeed
+  - `verification_failed`: emitted when any step fails, includes failed step names
+- Verification stops on first failure (fail-fast behavior).
+- Updated `app/web-ui/app.js` to handle verification events in `handleAgentEvent`, display step-by-step progress in Run Log, and show verification status in Agent Console via `displayVerificationStatus`.
+- Added CSS styles for verification status display: `.verification-status`, `.verification-header`, `.verification-step`, `.step-pass`, `.step-fail`, `.step-error`.
+- Added `VerificationTests` class in `tests/test_agent_runs.py` with 7 tests:
+  - Verification triggers on success (returncode=0)
+  - Verification does NOT trigger on failure (returncode!=0)
+  - Run record contains verification fields
+  - Verification steps have correct structure
+  - SSE events include verification event types
+  - Verification failure marks overall status as "failed"
+
+Verified:
+
+- `python -m py_compile app\api\server.py app\start.py` (clean)
+- `node --check app\web-ui\app.js` (clean)
+- `PYTHONPATH=src python -m unittest discover -s tests -p 'test*.py' -v` (98 tests, all pass)
+
+Open:
+
+- Verification runs the actual CLI subprocess, so it depends on the project being in a valid state. If the agent makes breaking changes, verification will catch it.
+- The `qaReportPath` is only set when the file exists after verification; it may be missing if QA fails before generating the report.
+- Verification steps run sequentially and block the background thread until all complete. For large projects, this could add noticeable time to the run.
+- The frontend displays verification results in the Agent Console, but does not yet parse the QA report content for inline display.
+- Future work could add verification to the Build State panel capability summary.
+- Reviewer correction: final `completed`/`failed` events are now emitted after verification, so the UI does not stop polling before verification events arrive.
+- Reviewer correction: verification command exceptions are recorded as failed steps instead of escaping from the background thread.

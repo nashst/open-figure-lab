@@ -719,6 +719,46 @@ class OpenFigureLabApp {
                 this.refreshAfterAgentRun();
                 break;
 
+            case "verification_started":
+                this.addLogEntry("Verification started: validate -> render -> qa", "command");
+                this.setStatus("running", "Verifying...");
+                break;
+
+            case "verification_step":
+                if (evt.data) {
+                    const step = evt.data.step || "unknown";
+                    const stepStatus = evt.data.status || "unknown";
+                    if (stepStatus === "running") {
+                        this.addLogEntry(`  Running ${step}...`, "output");
+                    } else if (stepStatus === "passed") {
+                        this.addLogEntry(`  ${step} passed`, "success");
+                    } else if (stepStatus === "failed") {
+                        this.addLogEntry(`  ${step} failed (exit ${evt.data.returncode || "?"})`, "error");
+                    }
+                }
+                break;
+
+            case "verification_passed":
+                this.addLogEntry("Verification passed: validate/render/qa", "success");
+                this.setStatus("ready", "Verified");
+                // Refresh QA report and preview after verification
+                this.fetchQAReport();
+                this.loadPreview();
+                break;
+
+            case "verification_failed":
+                this.addLogEntry("Verification failed", "error");
+                if (evt.data && evt.data.steps) {
+                    const failedSteps = evt.data.steps.filter(s => !s.success);
+                    for (const step of failedSteps) {
+                        this.appendAgentMessage(`Verification failed at: ${step.name}`, "system");
+                    }
+                }
+                this.setStatus("error", "Verification failed");
+                // Still refresh QA report to show partial results
+                this.fetchQAReport();
+                break;
+
             default:
                 // Unknown event type, log it
                 if (detail) {
@@ -843,7 +883,7 @@ class OpenFigureLabApp {
     }
 
     async refreshAfterAgentRun() {
-        // Fetch full run record for fileChanges and skillIds
+        // Fetch full run record for fileChanges, skillIds, and verification
         if (this.activeRunId || this._lastCompletedRunId) {
             const runId = this.activeRunId || this._lastCompletedRunId;
             try {
@@ -852,6 +892,7 @@ class OpenFigureLabApp {
                     const run = await res.json();
                     this.displayFileChanges(run);
                     this.displayUsedSkills(run);
+                    this.displayVerificationStatus(run);
                 }
             } catch (err) {
                 console.error("Failed to fetch run record:", err);
@@ -954,6 +995,59 @@ class OpenFigureLabApp {
             list.appendChild(badge);
         }
         container.appendChild(list);
+
+        this.agentThread.appendChild(container);
+        this.agentThread.scrollTop = this.agentThread.scrollHeight;
+    }
+
+    displayVerificationStatus(run) {
+        const verStatus = run.verificationStatus || "not_run";
+        if (verStatus === "not_run") return;
+
+        const container = document.createElement("div");
+        container.className = "verification-status";
+
+        const header = document.createElement("div");
+        header.className = `verification-header verification-${verStatus}`;
+        if (verStatus === "passed") {
+            header.textContent = "Verification passed: validate/render/qa";
+        } else if (verStatus === "failed") {
+            header.textContent = "Verification failed";
+        } else if (verStatus === "running") {
+            header.textContent = "Verification running...";
+        }
+        container.appendChild(header);
+
+        const steps = run.verificationSteps || [];
+        if (steps.length > 0) {
+            const stepsList = document.createElement("div");
+            stepsList.className = "verification-steps";
+            for (const step of steps) {
+                const stepEl = document.createElement("div");
+                stepEl.className = `verification-step ${step.success ? "step-pass" : "step-fail"}`;
+
+                const icon = document.createElement("span");
+                icon.className = "step-icon";
+                icon.textContent = step.success ? "PASS" : "FAIL";
+
+                const name = document.createElement("span");
+                name.className = "step-name";
+                name.textContent = step.name;
+
+                stepEl.appendChild(icon);
+                stepEl.appendChild(name);
+                stepsList.appendChild(stepEl);
+
+                // Show stderr summary for failed steps
+                if (!step.success && step.stderr) {
+                    const errSummary = document.createElement("div");
+                    errSummary.className = "step-error";
+                    errSummary.textContent = this.truncateOutput(step.stderr, 500);
+                    stepsList.appendChild(errSummary);
+                }
+            }
+            container.appendChild(stepsList);
+        }
 
         this.agentThread.appendChild(container);
         this.agentThread.scrollTop = this.agentThread.scrollHeight;

@@ -766,9 +766,11 @@ class AsyncAgentRunTests(unittest.TestCase):
         time.sleep(0.3)
         self._cleanup_run(data["id"])
 
+    @patch("api.server._run_cli")
     @patch("api.server.subprocess.Popen")
-    def test_run_completes_successfully(self, mock_popen: MagicMock) -> None:
+    def test_run_completes_successfully(self, mock_popen: MagicMock, mock_cli: MagicMock) -> None:
         mock_popen.return_value = _make_mock_popen(stdout_lines=["line1", "line2"], returncode=0)
+        mock_cli.return_value = (0, "ok", "")
         _, created = self._post_json("/api/agent-runs", {
             "agentId": "opencode", "model": "default", "project": VALID_PROJECT, "prompt": "go",
         })
@@ -879,9 +881,11 @@ class AsyncAgentRunTests(unittest.TestCase):
 
     # ---- Claude adapter tests ----
 
+    @patch("api.server._run_cli")
     @patch("api.server.subprocess.Popen")
-    def test_claude_accepted_and_completes(self, mock_popen: MagicMock) -> None:
+    def test_claude_accepted_and_completes(self, mock_popen: MagicMock, mock_cli: MagicMock) -> None:
         mock_popen.return_value = _make_mock_popen(stdout_lines=["claude output"], returncode=0)
+        mock_cli.return_value = (0, "ok", "")
         _, created = self._post_json("/api/agent-runs", {
             "agentId": "claude", "model": "default", "project": VALID_PROJECT, "prompt": "do stuff",
         })
@@ -922,9 +926,11 @@ class AsyncAgentRunTests(unittest.TestCase):
 
     # ---- Codex adapter tests ----
 
+    @patch("api.server._run_cli")
     @patch("api.server.subprocess.Popen")
-    def test_codex_accepted_and_completes(self, mock_popen: MagicMock) -> None:
+    def test_codex_accepted_and_completes(self, mock_popen: MagicMock, mock_cli: MagicMock) -> None:
         mock_popen.return_value = _make_mock_popen(stdout_lines=["codex output"], returncode=0)
+        mock_cli.return_value = (0, "ok", "")
         _, created = self._post_json("/api/agent-runs", {
             "agentId": "codex", "model": "default", "project": VALID_PROJECT, "prompt": "do stuff",
         })
@@ -1214,6 +1220,184 @@ class SSEEventStreamTests(unittest.TestCase):
     def test_sse_nonexistent_run_returns_404(self) -> None:
         status, body = self._get_text("/api/agent-runs/nonexistent_1234/events")
         self.assertEqual(status, 404)
+
+
+class VerificationTests(unittest.TestCase):
+    """Tests for post-run verification (validate -> render -> qa)."""
+
+    server: HTTPServer
+    port: int
+    thread: Thread
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.port = _free_port()
+        cls.server = HTTPServer(("127.0.0.1", cls.port), _QuietHandler)
+        cls.thread = Thread(target=cls.server.serve_forever, daemon=True)
+        cls.thread.start()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.server.shutdown()
+
+    def _url(self, path: str) -> str:
+        return f"http://127.0.0.1:{self.port}{path}"
+
+    def _post_json(self, path: str, data: dict) -> tuple[int, dict]:
+        body = json.dumps(data).encode()
+        req = Request(self._url(path), data=body, method="POST")
+        req.add_header("Content-Type", "application/json")
+        try:
+            with urlopen(req) as resp:
+                return resp.status, json.loads(resp.read())
+        except Exception as e:
+            if hasattr(e, "code") and hasattr(e, "read"):
+                return e.code, json.loads(e.read())
+            raise
+
+    def _get_json(self, path: str) -> tuple[int, dict]:
+        req = Request(self._url(path), method="GET")
+        try:
+            with urlopen(req) as resp:
+                return resp.status, json.loads(resp.read())
+        except Exception as e:
+            if hasattr(e, "code") and hasattr(e, "read"):
+                return e.code, json.loads(e.read())
+            raise
+
+    def _get_text(self, path: str) -> tuple[int, str]:
+        req = Request(self._url(path), method="GET")
+        try:
+            with urlopen(req) as resp:
+                return resp.status, resp.read().decode("utf-8")
+        except Exception as e:
+            if hasattr(e, "code") and hasattr(e, "read"):
+                return e.code, e.read().decode("utf-8")
+            raise
+
+    def _wait_for_status(self, run_id: str, timeout: float = 30.0) -> dict:
+        """Poll until run leaves 'pending'/'running' status."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            _, data = self._get_json(f"/api/agent-runs/{run_id}")
+            if data.get("status") not in ("pending", "running"):
+                return data
+            time.sleep(0.05)
+        self.fail(f"Run {run_id} did not complete within {timeout}s (status={data.get('status')})")
+        return {}  # unreachable
+
+    def _cleanup_run(self, run_id: str) -> None:
+        (RUNS_DIR / f"{run_id}.json").unlink(missing_ok=True)
+
+    @patch("api.server._run_cli")
+    @patch("api.server.subprocess.Popen")
+    def test_verification_triggered_on_success(self, mock_popen: MagicMock, mock_cli: MagicMock) -> None:
+        """Agent run with returncode=0 should trigger verification."""
+        mock_popen.return_value = _make_mock_popen(returncode=0)
+        mock_cli.return_value = (0, "ok", "")
+        _, created = self._post_json("/api/agent-runs", {
+            "agentId": "opencode", "project": VALID_PROJECT, "prompt": "test verification",
+        })
+        final = self._wait_for_status(created["id"])
+        self.assertEqual(final["status"], "completed")
+        self.assertIn("verificationStatus", final)
+        self.assertIn("verificationSteps", final)
+        self._cleanup_run(created["id"])
+
+    @patch("api.server.subprocess.Popen")
+    def test_verification_not_triggered_on_failure(self, mock_popen: MagicMock) -> None:
+        """Agent run with returncode!=0 should NOT trigger verification."""
+        mock_popen.return_value = _make_mock_popen(returncode=1, stderr_lines=["error"])
+        _, created = self._post_json("/api/agent-runs", {
+            "agentId": "opencode", "project": VALID_PROJECT, "prompt": "fail test",
+        })
+        final = self._wait_for_status(created["id"])
+        self.assertEqual(final["status"], "failed")
+        self.assertEqual(final["verificationStatus"], "not_run")
+        self.assertEqual(final["verificationSteps"], [])
+        self._cleanup_run(created["id"])
+
+    @patch("api.server._run_cli")
+    @patch("api.server.subprocess.Popen")
+    def test_verification_fields_in_record(self, mock_popen: MagicMock, mock_cli: MagicMock) -> None:
+        """Run record should contain verificationStatus, verificationSteps, qaReportPath."""
+        mock_popen.return_value = _make_mock_popen(returncode=0)
+        mock_cli.return_value = (0, "ok", "")
+        _, created = self._post_json("/api/agent-runs", {
+            "agentId": "opencode", "project": VALID_PROJECT, "prompt": "check fields",
+        })
+        final = self._wait_for_status(created["id"])
+        self.assertIn("verificationStatus", final)
+        self.assertIn("verificationSteps", final)
+        self.assertIn("qaReportPath", final)
+        # verificationStatus should be "passed" or "failed" depending on CLI
+        self.assertIn(final["verificationStatus"], ("passed", "failed"))
+        self.assertIsInstance(final["verificationSteps"], list)
+        self._cleanup_run(created["id"])
+
+    @patch("api.server._run_cli")
+    @patch("api.server.subprocess.Popen")
+    def test_verification_steps_structure(self, mock_popen: MagicMock, mock_cli: MagicMock) -> None:
+        """Each verification step should have name, success, stdout, stderr, returncode."""
+        mock_popen.return_value = _make_mock_popen(returncode=0)
+        mock_cli.return_value = (0, "ok", "")
+        _, created = self._post_json("/api/agent-runs", {
+            "agentId": "opencode", "project": VALID_PROJECT, "prompt": "step structure",
+        })
+        final = self._wait_for_status(created["id"])
+        steps = final.get("verificationSteps", [])
+        for step in steps:
+            self.assertIn("name", step)
+            self.assertIn("success", step)
+            self.assertIn("stdout", step)
+            self.assertIn("stderr", step)
+            self.assertIn("returncode", step)
+            self.assertIn(step["name"], ("validate", "render", "qa"))
+            self.assertIsInstance(step["success"], bool)
+        self._cleanup_run(created["id"])
+
+    @patch("api.server._run_cli")
+    @patch("api.server.subprocess.Popen")
+    def test_verification_events_in_sse(self, mock_popen: MagicMock, mock_cli: MagicMock) -> None:
+        """SSE events should contain verification_started, verification_step, verification_passed/failed."""
+        mock_popen.return_value = _make_mock_popen(returncode=0)
+        mock_cli.return_value = (0, "ok", "")
+        _, created = self._post_json("/api/agent-runs", {
+            "agentId": "opencode", "project": VALID_PROJECT, "prompt": "sse events",
+        })
+        self._wait_for_status(created["id"])
+
+        # Get all events
+        _, body = self._get_text(f"/api/agent-runs/{created['id']}/events")
+        self.assertIn("verification_started", body)
+        self.assertIn("verification_step", body)
+        # Should have either passed or failed
+        has_passed = "verification_passed" in body
+        has_failed = "verification_failed" in body
+        self.assertTrue(has_passed or has_failed, "Should have verification_passed or verification_failed")
+        terminal_pos = body.rfind("event: completed")
+        verification_pos = max(body.rfind("event: verification_passed"), body.rfind("event: verification_failed"))
+        self.assertGreater(terminal_pos, verification_pos)
+        self._cleanup_run(created["id"])
+
+    @patch("api.server.subprocess.Popen")
+    @patch("api.server._run_cli")
+    def test_verification_failure_marks_failed(self, mock_cli: MagicMock, mock_popen: MagicMock) -> None:
+        """If any verification step fails, overall status should be 'failed'."""
+        mock_popen.return_value = _make_mock_popen(returncode=0)
+        # Make validate fail
+        mock_cli.side_effect = [
+            (1, "", "validate failed"),  # validate
+        ]
+        _, created = self._post_json("/api/agent-runs", {
+            "agentId": "opencode", "project": VALID_PROJECT, "prompt": "verification fail",
+        })
+        final = self._wait_for_status(created["id"])
+        self.assertEqual(final["verificationStatus"], "failed")
+        steps = final.get("verificationSteps", [])
+        self.assertGreater(len(steps), 0)
+        self.assertFalse(steps[0]["success"])
+        self._cleanup_run(created["id"])
 
 
 if __name__ == "__main__":

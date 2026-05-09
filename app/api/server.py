@@ -24,6 +24,7 @@ DEFAULT_PROJECT_NAME = "soc_proxy_fig2"
 DEFAULT_PROJECT = ROOT / "examples" / DEFAULT_PROJECT_NAME
 SESSION_CONFIG_PATH = ROOT / ".omx" / "open-figure-lab-session.json"
 RUNS_DIR = ROOT / ".omx" / "runs"
+_RUN_RECORD_LOCK = threading.RLock()
 DEFAULT_MODEL_OPTION = {"id": "default", "label": "Default (CLI config)"}
 AGENT_CACHE_TTL_SECONDS = 60
 _AGENT_CACHE: dict[str, object] = {"expires_at": 0.0, "agents": []}
@@ -150,9 +151,20 @@ def _generate_run_id() -> str:
 
 def _save_run(run: dict) -> None:
     """Persist a run record to .omx/runs/<id>.json."""
-    RUNS_DIR.mkdir(parents=True, exist_ok=True)
-    path = RUNS_DIR / f"{run['id']}.json"
-    path.write_text(json.dumps(run, indent=2), encoding="utf-8")
+    with _RUN_RECORD_LOCK:
+        RUNS_DIR.mkdir(parents=True, exist_ok=True)
+        path = RUNS_DIR / f"{run['id']}.json"
+        path.write_text(json.dumps(run, indent=2), encoding="utf-8")
+
+
+def _normalize_run_record(run: dict) -> dict:
+    """Backfill fields expected by current run consumers."""
+    run.setdefault("fileChanges", [])
+    run.setdefault("verificationStatus", "not_run")
+    run.setdefault("verificationSteps", [])
+    run.setdefault("qaReportPath", None)
+    run.setdefault("events", [])
+    return run
 
 
 def _load_run(run_id: str) -> dict | None:
@@ -161,12 +173,13 @@ def _load_run(run_id: str) -> dict | None:
     if not run_id or "/" in run_id or "\\" in run_id or ".." in run_id:
         return None
     path = RUNS_DIR / f"{run_id}.json"
-    if not path.exists():
-        return None
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return None
+    with _RUN_RECORD_LOCK:
+        if not path.exists():
+            return None
+        try:
+            return _normalize_run_record(json.loads(path.read_text(encoding="utf-8")))
+        except (json.JSONDecodeError, OSError):
+            return None
 
 
 MAX_PROMPT_LENGTH = 8000
@@ -429,6 +442,9 @@ def _is_valid_agent_model(agent_id: str, model: str) -> bool:
 def _run_agent_background(run_id: str, project_dir: Path, agent_id: str,
                           model: str, reasoning: str, full_prompt: str) -> None:
     """Execute an agent in a background thread using Popen, streaming stdout/stderr into run events."""
+    # --- Extract project name from directory ---
+    project_name = project_dir.name
+
     # --- Take snapshot before run ---
     snapshot_before = _snapshot_project(project_dir)
 
@@ -479,23 +495,70 @@ def _run_agent_background(run_id: str, project_dir: Path, agent_id: str,
         run["returncode"] = returncode
         run["stdout"] = "\n".join(stdout_lines)[-4000:]
         run["stderr"] = "\n".join(stderr_lines)[-4000:]
+        run["fileChanges"] = file_changes
+        if file_changes:
+            run["events"].append({
+                "id": _next_event_id(),
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "type": "file_changes",
+                "detail": json.dumps(file_changes),
+            })
+        _save_run(run)
+
+        # --- Post-run verification (only on agent success) ---
+        if status == "completed" and returncode == 0:
+            run = _load_run(run_id)
+            if run is None:
+                return
+            run["verificationStatus"] = "running"
+            run["events"].append({
+                "id": _next_event_id(),
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "type": "verification_started",
+                "detail": "Starting post-run verification: validate -> render -> qa",
+            })
+            _save_run(run)
+
+            verification = _run_verification_steps(project_name, run_id)
+
+            run = _load_run(run_id)
+            if run is None:
+                return
+            run["verificationStatus"] = verification["overall"]
+            run["verificationSteps"] = verification["steps"]
+            run["qaReportPath"] = verification["qaReportPath"]
+
+            ver_status = verification["overall"]
+            run["events"].append({
+                "id": _next_event_id(),
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "type": f"verification_{ver_status}",
+                "detail": json.dumps({
+                    "overall": ver_status,
+                    "steps": [{"name": s["name"], "success": s["success"]} for s in verification["steps"]],
+                }),
+            })
+            _save_run(run)
+        else:
+            # Agent failed: no verification.
+            run = _load_run(run_id)
+            if run is not None:
+                run["verificationStatus"] = "not_run"
+                run["verificationSteps"] = []
+                run["qaReportPath"] = None
+                _save_run(run)
+
+        run = _load_run(run_id)
+        if run is None:
+            return
         run["status"] = status
         run["completedAt"] = datetime.now(timezone.utc).isoformat()
-        run["fileChanges"] = file_changes
         run["events"].append({
             "id": _next_event_id(),
             "ts": run["completedAt"],
             "type": status,
             "detail": f"exit={returncode}",
         })
-        if file_changes:
-            summary = f"{len(file_changes)} file(s) changed"
-            run["events"].append({
-                "id": _next_event_id(),
-                "ts": run["completedAt"],
-                "type": "file_changes",
-                "detail": json.dumps(file_changes),
-            })
         _save_run(run)
 
     try:
@@ -642,6 +705,81 @@ def _run_cli(args: list[str]) -> tuple[int, str, str]:
     cmd = [sys.executable, "-m", CLI_MODULE] + args
     proc = subprocess.run(cmd, capture_output=True, text=True, env=_cli_env())
     return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
+
+
+def _run_verification_steps(project_name: str, run_id: str) -> dict:
+    """Run validate -> render -> qa sequentially and return verification result.
+
+    Returns a dict with keys:
+      - overall: "passed" | "failed"
+      - steps: list of {name, success, stdout, stderr, returncode}
+      - qaReportPath: relative path to qa_report.md (or None)
+    """
+    steps: list[dict] = []
+    all_passed = True
+    qa_report_path = None
+
+    for step_name in ("validate", "render", "qa"):
+        # Update run record with current verification step
+        run = _load_run(run_id)
+        if run is not None:
+            ts = datetime.now(timezone.utc).isoformat()
+            run["events"].append({
+                "id": _next_event_id(),
+                "ts": ts,
+                "type": "verification_step",
+                "detail": json.dumps({"step": step_name, "status": "running"}),
+            })
+            _save_run(run)
+
+        try:
+            returncode, stdout, stderr = _run_cli([step_name, f"examples/{project_name}"])
+        except Exception as exc:
+            returncode, stdout, stderr = -1, "", str(exc)
+        success = returncode == 0
+
+        step_result = {
+            "name": step_name,
+            "success": success,
+            "stdout": stdout[-2000:],  # truncate
+            "stderr": stderr[-2000:],
+            "returncode": returncode,
+        }
+        steps.append(step_result)
+
+        if not success:
+            all_passed = False
+
+        # Record step completion event
+        run = _load_run(run_id)
+        if run is not None:
+            ts = datetime.now(timezone.utc).isoformat()
+            run["events"].append({
+                "id": _next_event_id(),
+                "ts": ts,
+                "type": "verification_step",
+                "detail": json.dumps({
+                    "step": step_name,
+                    "status": "passed" if success else "failed",
+                    "returncode": returncode,
+                }),
+            })
+            _save_run(run)
+
+        # Stop on first failure
+        if not success:
+            break
+
+    # Determine qa_report path
+    qa_path = ROOT / "examples" / project_name / "outputs" / "qa_report.md"
+    if qa_path.exists():
+        qa_report_path = f"examples/{project_name}/outputs/qa_report.md"
+
+    return {
+        "overall": "passed" if all_passed else "failed",
+        "steps": steps,
+        "qaReportPath": qa_report_path,
+    }
 
 
 def _read_text(path: Path) -> str | None:
@@ -956,6 +1094,9 @@ class APIHandler(SimpleHTTPRequestHandler):
             "stdout": "",
             "stderr": "",
             "fileChanges": [],
+            "verificationStatus": "not_run",
+            "verificationSteps": [],
+            "qaReportPath": None,
             "events": [
                 {"id": _next_event_id(), "ts": now, "type": "created", "detail": "Run record created"},
             ],
