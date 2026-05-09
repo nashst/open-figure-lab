@@ -6,8 +6,9 @@ import argparse
 import sys
 from pathlib import Path
 
-# Add src to path for CLI imports
+# Add project root and src to path
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from app.api.server import run_server
