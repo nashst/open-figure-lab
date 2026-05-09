@@ -32,6 +32,11 @@ examples/**/history/
 .omx/logs/
 .omx/state/
 .omx/metrics.json
+.omx/runs/
+.omx/open-figure-lab-session.json
+
+# OpenCode/Sisyphus local runtime state
+.sisyphus/
 
 # OS / editor
 .DS_Store

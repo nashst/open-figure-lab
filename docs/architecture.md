@@ -13,6 +13,25 @@ Open Figure Lab
 `-- UI
 ```
 
+## OpenDesign Reference Boundary
+
+Open Figure Lab should follow OpenDesign's runtime boundary where practical:
+
+```text
+local web UI -> local daemon/API -> existing coding-agent CLI -> project workspace
+```
+
+The app does not replace OpenCode, Claude Code, Codex, Cursor Agent, or similar CLIs. It detects installed local agents, lets the user choose an agent and model, then starts the figure lab with that runtime context.
+
+The first implementation is intentionally small:
+
+- `GET /api/agents` detects known local CLIs from `PATH`.
+- The Web UI starts on an agent setup screen before entering the Lab.
+- Model choices come from the CLI when cheap and reliable; otherwise the app uses curated fallback options.
+- The figure workspace still uses the existing CLI-backed validate/render/QA API until the streaming agent loop is implemented.
+
+This keeps the product aligned with OpenDesign without importing its full daemon, SQLite, React, or packaging stack before the scientific figure loop is stable.
+
 ## Core Rule
 
 Data layer and visual layer are separate.
@@ -62,4 +81,3 @@ figure_project/
 - `agent_adapter` - future integration boundary for Codex, OpenCode, Claude Code, Cursor.
 
 The current codebase starts with only `open_figure_lab.cli` to avoid premature dependency decisions.
-

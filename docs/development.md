@@ -58,3 +58,34 @@ Expected generated outputs:
 - `examples/soc_proxy_fig2/outputs/soc_proxy_fig2.pdf`
 - `examples/soc_proxy_fig2/outputs/soc_proxy_fig2.png`
 - `examples/soc_proxy_fig2/outputs/qa_report.md`
+
+## Web UI
+
+The Web UI provides an OpenDesign-like workbench interface.
+
+### Start the server
+
+```powershell
+cd "D:\Acodeproject\Open Figure Lab"
+python app/start.py
+```
+
+Open `http://localhost:8080` in your browser.
+
+### Features
+
+- **Command Panel** (left): Run validate, render, QA commands
+- **Figure Preview** (center): View rendered figure outputs
+- **Inspector** (right): View figure.yaml, data manifest, QA report
+- **Run Log** (bottom): Command execution history
+
+### API Endpoints
+
+- `GET /api/project` - Project information
+- `GET /api/spec` - Figure spec content
+- `GET /api/data-manifest` - Data manifest content
+- `GET /api/qa-report` - QA report content
+- `POST /api/validate` - Run validation
+- `POST /api/render` - Run rendering
+- `POST /api/qa` - Run QA check
+- `GET /outputs/<filename>` - Serve output files

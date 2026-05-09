@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Open Figure Lab</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <section id="entryView" class="entry-view" aria-label="Agent setup">
+        <div class="entry-shell">
+            <div class="entry-copy">
+                <div class="brand-block entry-brand">
+                    <div class="brand-mark">OFL</div>
+                    <div>
+                        <div class="brand-name">Open Figure Lab</div>
+                        <div class="brand-subtitle">Local-first scientific figure lab</div>
+                    </div>
+                </div>
+                <div class="eyebrow">Agent Runtime</div>
+                <h1>Choose the local coding agent before entering the Lab.</h1>
+                <p>
+                    Open Figure Lab follows OpenDesign's boundary: the app does not replace your agent.
+                    It detects local CLI agents, lets you choose the model, then starts the figure workspace.
+                </p>
+                <div class="entry-principles">
+                    <span>PATH detection</span>
+                    <span>CLI model picker</span>
+                    <span>Skill-driven lab</span>
+                </div>
+            </div>
+
+            <form id="agentSetupForm" class="agent-setup-card">
+                <div class="panel-title-row">
+                    <div>
+                        <div class="eyebrow">Step 1</div>
+                        <h2>Execution engine</h2>
+                    </div>
+                    <button id="btnRescanAgents" class="button secondary" type="button">Rescan</button>
+                </div>
+
+                <div id="agentList" class="agent-list" aria-live="polite">
+                    <div class="agent-loading">Scanning local PATH for agent CLIs...</div>
+                </div>
+
+                <div class="setup-fields">
+                    <label class="field">
+                        <span>Project</span>
+                        <select id="projectSelect"></select>
+                    </label>
+                    <label class="field">
+                        <span>Model</span>
+                        <select id="modelSelect"></select>
+                    </label>
+                    <label class="field" id="reasoningField">
+                        <span>Reasoning</span>
+                        <select id="reasoningSelect"></select>
+                    </label>
+                </div>
+
+                <div class="setup-summary">
+                    <div>
+                        <div class="eyebrow">Current Lab</div>
+                        <strong id="setupProjectName">soc_proxy_fig2</strong>
+                        <span id="setupProjectDesc">Nature preset / trusted CSV data / reproducible outputs</span>
+                    </div>
+                </div>
+
+                <button id="btnLaunchLab" class="button primary launch-button" type="submit" disabled>Start Lab</button>
+                <p id="setupHint" class="setup-hint">Install OpenCode, Claude Code, Codex, Cursor Agent, or Gemini CLI if no agent is available.</p>
+            </form>
+        </div>
+    </section>
+
+    <section id="labView" class="lab-view hidden" aria-label="Open Figure Lab workspace">
+    <aside class="workspace-rail" aria-label="Workspace navigation">
+        <div class="brand-block">
+            <div class="brand-mark">OFL</div>
+            <div>
+                <div class="brand-name">Open Figure Lab</div>
+                <div class="brand-subtitle">Local figure workbench</div>
+            </div>
+        </div>
+
+        <nav class="rail-nav" aria-label="Primary">
+            <button class="rail-item active" data-nav="workspace" type="button">Workspace</button>
+            <button class="rail-item" data-nav="figures" type="button">Figures</button>
+            <button class="rail-item" data-nav="data" type="button">Data</button>
+            <button class="rail-item" data-nav="skills" type="button">Skills</button>
+        </nav>
+
+        <div class="project-card">
+            <div class="eyebrow">Current Project</div>
+            <div id="projectName" class="project-name">soc_proxy_fig2</div>
+            <div class="project-meta">Nature preset / 2 x 2 figure</div>
+        </div>
+
+        <div class="project-card">
+            <div class="eyebrow">Agent</div>
+            <div id="selectedAgentName" class="project-name">Not selected</div>
+            <div id="selectedModelName" class="project-meta">Default model</div>
+        </div>
+
+        <div class="rail-footer">
+            <button class="rail-item planned" data-planned="Settings panel is not implemented yet." type="button">Settings <span>Planned</span></button>
+            <button class="rail-item planned" data-planned="Handoff viewer is not implemented yet." type="button">Handoff <span>Planned</span></button>
+        </div>
+    </aside>
+
+    <main class="app-shell">
+        <header class="topbar">
+            <div>
+                <div class="eyebrow">Artifact-first canvas</div>
+                <h1>Scientific figure workspace</h1>
+            </div>
+            <div class="topbar-actions">
+                <span class="status-pill" id="statusPill">Ready</span>
+                <button id="btnValidate" class="button secondary" type="button">Validate</button>
+                <button id="btnRender" class="button primary" type="button">Render</button>
+                <button id="btnQA" class="button secondary" type="button">QA</button>
+            </div>
+        </header>
+
+        <section class="capability-panel" aria-label="Development status">
+            <div class="capability-head">
+                <div>
+                    <div class="eyebrow">Build State</div>
+                    <h2>What works now</h2>
+                </div>
+                <span id="buildStateSummary" class="build-state-summary">Checking local API...</span>
+            </div>
+            <div class="capability-grid">
+                <div class="capability-item">
+                    <span>Spec</span>
+                    <strong id="capSpec">Loading</strong>
+                </div>
+                <div class="capability-item">
+                    <span>Data Manifest</span>
+                    <strong id="capData">Loading</strong>
+                </div>
+                <div class="capability-item">
+                    <span>Preview</span>
+                    <strong id="capPreview">Loading</strong>
+                </div>
+                <div class="capability-item">
+                    <span>QA Report</span>
+                    <strong id="capQA">Loading</strong>
+                </div>
+                <div class="capability-item">
+                    <span>Skills</span>
+                    <strong id="capSkills">Loading</strong>
+                </div>
+                <div class="capability-item">
+                    <span>Agent Runs</span>
+                    <strong id="capAgentRuns">Ready</strong>
+                </div>
+            </div>
+        </section>
+
+        <section class="workspace-grid">
+            <section class="canvas-panel" aria-label="Figure preview">
+                <div class="canvas-toolbar">
+                    <div class="toolbar-group">
+                        <button class="tool-button active" type="button" title="Select">Select</button>
+                        <button class="tool-button planned" data-planned="Canvas pan is not implemented yet." type="button" title="Pan">Pan <span>Planned</span></button>
+                        <button class="tool-button planned" data-planned="Canvas measurement is not implemented yet." type="button" title="Measure">Measure <span>Planned</span></button>
+                    </div>
+                    <div class="toolbar-group">
+                        <button id="btnRefresh" class="tool-button" type="button">Refresh preview</button>
+                    </div>
+                </div>
+
+                <div class="preview-stage">
+                    <div class="paper-frame">
+                        <div id="previewEmpty" class="empty-state">
+                            <div class="empty-title">No rendered figure</div>
+                            <div class="empty-copy">Run Render to generate the current figure artifact.</div>
+                        </div>
+                        <img id="previewImage" class="preview-image" alt="Rendered scientific figure preview">
+                    </div>
+                </div>
+
+                <footer class="canvas-status">
+                    <span id="previewInfo">No output loaded</span>
+                    <span>Export targets: SVG / PDF / PNG</span>
+                </footer>
+            </section>
+
+            <aside class="right-dock" aria-label="Inspector and agent">
+                <section class="inspector-panel">
+                    <div class="panel-title-row">
+                        <div>
+                            <div class="eyebrow">Inspector</div>
+                            <h2>Spec and QA</h2>
+                        </div>
+                        <div class="tab-strip" role="tablist" aria-label="Inspector tabs">
+                            <button class="tab active" data-tab="spec" type="button">Spec</button>
+                            <button class="tab" data-tab="data" type="button">Data</button>
+                            <button class="tab" data-tab="qa" type="button">QA</button>
+                        </div>
+                    </div>
+                    <div class="inspector-content">
+                        <pre id="specContent" class="code-block"></pre>
+                        <pre id="dataContent" class="code-block hidden"></pre>
+                        <div id="qaContent" class="qa-content hidden"></div>
+                    </div>
+                </section>
+
+                <section class="agent-panel">
+                    <div class="panel-title-row compact">
+                        <div>
+                            <div class="eyebrow">Agent Console</div>
+                            <h2>Figure operator</h2>
+                        </div>
+                        <span class="agent-state">Local</span>
+                    </div>
+
+                    <div class="agent-thread">
+                        <div class="agent-message system">
+                            I can validate the figure spec, render the artifact, and run data QA for the current project.
+                        </div>
+                        <div class="agent-message user">
+                            Keep the data layer unchanged and regenerate the publication figure.
+                        </div>
+                    </div>
+
+                    <div class="skills-section">
+                        <div class="skills-header">
+                            <span class="eyebrow">Active Skills</span>
+                        </div>
+                        <div id="skillsList" class="skills-list">
+                            <!-- Skills will be populated by JS -->
+                        </div>
+                    </div>
+
+                    <div class="command-box">
+                        <label for="commandInput">Command draft</label>
+                        <div class="command-row">
+                            <textarea id="commandInput" rows="3" placeholder="Ask the agent to revise layout, inspect QA, or export assets."></textarea>
+                            <button id="btnSendPrompt" class="button primary send-button" type="button" disabled>Send</button>
+                            <button id="btnCancelRun" class="button ghost cancel-button hidden" type="button">Cancel</button>
+                        </div>
+                    </div>
+                </section>
+            </aside>
+        </section>
+
+        <section class="run-log-panel" aria-label="Run log">
+            <div class="panel-title-row compact">
+                <div>
+                    <div class="eyebrow">Trace</div>
+                    <h2>Run log</h2>
+                </div>
+                <button id="btnClearLog" class="button ghost" type="button">Clear</button>
+            </div>
+            <div id="runLog" class="run-log"></div>
+        </section>
+    </main>
+    </section>
+
+    <script src="app.js"></script>
+</body>
+</html>
