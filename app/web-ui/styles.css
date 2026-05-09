@@ -184,7 +184,7 @@ body {
 
 .setup-fields {
     display: grid;
-    grid-template-columns: 1fr 0.65fr;
+    grid-template-columns: 1fr 1fr 0.65fr;
     gap: 10px;
     padding: 0 14px 14px;
 }
@@ -723,14 +723,26 @@ h2 {
     text-transform: uppercase;
 }
 
+.command-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+}
+
 .command-box textarea {
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     resize: none;
     border: 1px solid var(--border-soft);
     border-radius: var(--radius-lg);
     background: var(--surface-low);
     color: var(--text-muted);
     padding: 9px;
+}
+
+.send-button {
+    height: 36px;
+    flex-shrink: 0;
 }
 
 .run-log-panel {

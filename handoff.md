@@ -172,3 +172,26 @@ Verified:
 Open:
 
 - `.sisyphus/` was created by OpenCode as local runtime state and is intentionally not part of the committed product surface unless we later decide to track it.
+
+## 2026-05-09 OpenCode - Project Config and Mock Agent Runs
+
+Changed:
+
+- Added project discovery for `examples/*/spec/figure.yaml`.
+- Added session config persistence for selected project, agent, model, and reasoning.
+- Added mock agent run create/read/cancel endpoints backed by `.omx/runs/`.
+- Enabled the Lab agent prompt box to create mock runs and show the run id in the UI.
+- Added `.gitignore` entries for local session/run state and `.sisyphus/`.
+- Added `tests/test_agent_runs.py` for agent run API behavior.
+
+Verified:
+
+- `python -m py_compile app\api\server.py app\start.py`
+- `node --check app\web-ui\app.js`
+- `PYTHONPATH=src python -m unittest discover -s tests -p 'test*.py' -v`
+- HTTP smoke test on `/api/projects`, `/api/session-config`, `/api/agent-runs`, `/api/agent-runs/<id>`, `/api/agent-runs/<id>/cancel`, and POST `/api/validate`, `/api/render`, `/api/qa`.
+
+Open:
+
+- Agent run records are still mock records; no real CLI process is spawned yet.
+- No SSE/event streaming yet.

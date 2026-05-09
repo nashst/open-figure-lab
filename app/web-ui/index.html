@@ -45,6 +45,10 @@
 
                 <div class="setup-fields">
                     <label class="field">
+                        <span>Project</span>
+                        <select id="projectSelect"></select>
+                    </label>
+                    <label class="field">
                         <span>Model</span>
                         <select id="modelSelect"></select>
                     </label>
@@ -57,8 +61,8 @@
                 <div class="setup-summary">
                     <div>
                         <div class="eyebrow">Current Lab</div>
-                        <strong>soc_proxy_fig2</strong>
-                        <span>Nature preset / trusted CSV data / reproducible outputs</span>
+                        <strong id="setupProjectName">soc_proxy_fig2</strong>
+                        <span id="setupProjectDesc">Nature preset / trusted CSV data / reproducible outputs</span>
                     </div>
                 </div>
 
@@ -186,7 +190,10 @@
 
                     <div class="command-box">
                         <label for="commandInput">Command draft</label>
-                        <textarea id="commandInput" rows="3" placeholder="Ask the agent to revise layout, inspect QA, or export assets." disabled></textarea>
+                        <div class="command-row">
+                            <textarea id="commandInput" rows="3" placeholder="Ask the agent to revise layout, inspect QA, or export assets."></textarea>
+                            <button id="btnSendPrompt" class="button primary send-button" type="button" disabled>Send</button>
+                        </div>
                     </div>
                 </section>
             </aside>

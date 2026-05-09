@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
+from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -16,7 +18,10 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parent.parent.parent
 CLI_MODULE = "open_figure_lab.cli"
 DEFAULT_PORT = 8080
-DEFAULT_PROJECT = ROOT / "examples" / "soc_proxy_fig2"
+DEFAULT_PROJECT_NAME = "soc_proxy_fig2"
+DEFAULT_PROJECT = ROOT / "examples" / DEFAULT_PROJECT_NAME
+SESSION_CONFIG_PATH = ROOT / ".omx" / "open-figure-lab-session.json"
+RUNS_DIR = ROOT / ".omx" / "runs"
 DEFAULT_MODEL_OPTION = {"id": "default", "label": "Default (CLI config)"}
 AGENT_CACHE_TTL_SECONDS = 60
 _AGENT_CACHE: dict[str, object] = {"expires_at": 0.0, "agents": []}
@@ -89,9 +94,76 @@ AGENT_DEFS = [
 ]
 
 
+def _load_session_config() -> dict:
+    """Load session config from disk, returning defaults if missing."""
+    if SESSION_CONFIG_PATH.exists():
+        try:
+            return json.loads(SESSION_CONFIG_PATH.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {"project": DEFAULT_PROJECT_NAME}
+
+
+def _save_session_config(config: dict) -> None:
+    """Persist session config to disk."""
+    SESSION_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SESSION_CONFIG_PATH.write_text(json.dumps(config, indent=2), encoding="utf-8")
+
+
+def _get_current_project_name() -> str:
+    """Return the active project name from session config."""
+    project_name = _load_session_config().get("project", DEFAULT_PROJECT_NAME)
+    return project_name if _is_valid_project(project_name) else DEFAULT_PROJECT_NAME
+
+
 def _get_project_root() -> Path:
     """Return the current project root directory."""
-    return DEFAULT_PROJECT
+    return ROOT / "examples" / _get_current_project_name()
+
+
+def _scan_projects() -> list[dict]:
+    """Scan examples/ for figure projects containing spec/figure.yaml."""
+    examples_dir = ROOT / "examples"
+    projects = []
+    if not examples_dir.is_dir():
+        return projects
+    for child in sorted(examples_dir.iterdir()):
+        if child.is_dir() and (child / "spec" / "figure.yaml").exists():
+            projects.append({"name": child.name, "path": str(child)})
+    return projects
+
+
+def _is_valid_project(project_name: str) -> bool:
+    """Check whether project_name corresponds to a valid figure project."""
+    if not project_name or "/" in project_name or "\\" in project_name or ".." in project_name:
+        return False
+    return (ROOT / "examples" / project_name / "spec" / "figure.yaml").exists()
+
+
+def _generate_run_id() -> str:
+    """Generate a URL-safe unique run identifier."""
+    return uuid.uuid4().hex[:16]
+
+
+def _save_run(run: dict) -> None:
+    """Persist a run record to .omx/runs/<id>.json."""
+    RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    path = RUNS_DIR / f"{run['id']}.json"
+    path.write_text(json.dumps(run, indent=2), encoding="utf-8")
+
+
+def _load_run(run_id: str) -> dict | None:
+    """Load a run record from disk, or None if not found."""
+    # Reject any path traversal
+    if not run_id or "/" in run_id or "\\" in run_id or ".." in run_id:
+        return None
+    path = RUNS_DIR / f"{run_id}.json"
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
 
 
 def _cli_env() -> dict[str, str]:
@@ -253,6 +325,10 @@ class APIHandler(SimpleHTTPRequestHandler):
             self._serve_static_file("app.js", "application/javascript")
         elif path == "/api/project":
             self._handle_get_project()
+        elif path == "/api/projects":
+            self._handle_get_projects()
+        elif path == "/api/session-config":
+            self._handle_get_session_config()
         elif path == "/api/agents":
             self._handle_get_agents(parsed.query)
         elif path == "/api/spec":
@@ -263,6 +339,8 @@ class APIHandler(SimpleHTTPRequestHandler):
             self._handle_get_qa_report()
         elif path.startswith("/outputs/"):
             self._handle_static_output(path)
+        elif path.startswith("/api/agent-runs/"):
+            self._handle_get_agent_run(path)
         else:
             self._text_response("Not found", 404)
 
@@ -276,6 +354,12 @@ class APIHandler(SimpleHTTPRequestHandler):
             self._handle_render()
         elif path == "/api/qa":
             self._handle_qa()
+        elif path == "/api/session-config":
+            self._handle_post_session_config()
+        elif path == "/api/agent-runs":
+            self._handle_post_agent_run()
+        elif path.startswith("/api/agent-runs/") and path.endswith("/cancel"):
+            self._handle_cancel_agent_run(path)
         else:
             self._json_response({"error": "Not found"}, 404)
 
@@ -288,6 +372,110 @@ class APIHandler(SimpleHTTPRequestHandler):
             "path": str(project),
             "exists": project.exists(),
         })
+
+    def _handle_get_projects(self) -> None:
+        self._json_response({"projects": _scan_projects()})
+
+    def _handle_get_session_config(self) -> None:
+        config = _load_session_config()
+        self._json_response(config)
+
+    def _handle_post_session_config(self) -> None:
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length) if length else b""
+            incoming = json.loads(body) if body else {}
+        except (json.JSONDecodeError, ValueError):
+            self._json_response({"error": "Invalid JSON"}, 400)
+            return
+
+        config = _load_session_config()
+        for key in ("project", "agentId", "model", "reasoning"):
+            if key in incoming:
+                config[key] = incoming[key]
+
+        # Validate project exists
+        project_name = config.get("project", DEFAULT_PROJECT_NAME)
+        if not _is_valid_project(project_name):
+            self._json_response({"error": f"Project '{project_name}' not found"}, 400)
+            return
+
+        _save_session_config(config)
+        self._json_response({"ok": True, "config": config})
+
+    def _read_json_body(self) -> tuple[dict | None, int]:
+        """Read and parse JSON request body. Returns (data, error_status)."""
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length) if length else b""
+            if not body:
+                return {}, 0
+            return json.loads(body), 0
+        except (json.JSONDecodeError, ValueError):
+            return None, 400
+
+    def _handle_post_agent_run(self) -> None:
+        """Create a new agent run record."""
+        data, err = self._read_json_body()
+        if data is None:
+            self._json_response({"error": "Invalid JSON"}, err)
+            return
+
+        project = data.get("project", "")
+        if not _is_valid_project(project):
+            self._json_response({"error": f"Invalid project: {project!r}"}, 400)
+            return
+
+        run_id = _generate_run_id()
+        now = datetime.now(timezone.utc).isoformat()
+        run = {
+            "id": run_id,
+            "status": "pending",
+            "agentId": data.get("agentId", ""),
+            "model": data.get("model", "default"),
+            "reasoning": data.get("reasoning", "default"),
+            "project": project,
+            "prompt": data.get("prompt", ""),
+            "createdAt": now,
+            "events": [
+                {"ts": now, "type": "created", "detail": "Run record created"},
+            ],
+        }
+        _save_run(run)
+        self._json_response(run, 201)
+
+    def _handle_get_agent_run(self, path: str) -> None:
+        """Return a single agent run record by id."""
+        run_id = path.split("/api/agent-runs/", 1)[-1]
+        run = _load_run(run_id)
+        if run is None:
+            self._json_response({"error": "Run not found"}, 404)
+            return
+        self._json_response(run)
+
+    def _handle_cancel_agent_run(self, path: str) -> None:
+        """Cancel an agent run."""
+        # path = /api/agent-runs/<id>/cancel
+        parts = path.split("/")
+        # ['', 'api', 'agent-runs', '<id>', 'cancel']
+        if len(parts) < 5:
+            self._json_response({"error": "Invalid path"}, 400)
+            return
+        run_id = parts[3]
+        run = _load_run(run_id)
+        if run is None:
+            self._json_response({"error": "Run not found"}, 404)
+            return
+
+        if run["status"] in ("completed", "cancelled"):
+            self._json_response({"error": f"Run already {run['status']}"}, 409)
+            return
+
+        now = datetime.now(timezone.utc).isoformat()
+        run["status"] = "cancelled"
+        run["events"].append({"ts": now, "type": "cancelled", "detail": "Cancelled by user"})
+        _save_run(run)
+        self._json_response(run)
 
     def _handle_get_agents(self, query: str = "") -> None:
         self._json_response({"agents": _cached_agents(force="refresh=1" in query)})

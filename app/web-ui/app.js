@@ -2,7 +2,9 @@ class OpenFigureLabApp {
     constructor() {
         this.apiBase = "";
         this.isRunning = false;
+        this.projects = [];
         this.projectName = "soc_proxy_fig2";
+        this.selectedProject = "soc_proxy_fig2";
         this.agents = [];
         this.selectedAgentId = null;
         this.selectedModel = "default";
@@ -12,7 +14,7 @@ class OpenFigureLabApp {
     init() {
         this.cacheElements();
         this.bindEvents();
-        this.scanAgents();
+        this.loadSessionAndProjects();
     }
 
     cacheElements() {
@@ -22,10 +24,13 @@ class OpenFigureLabApp {
         this.agentList = document.getElementById("agentList");
         this.btnRescanAgents = document.getElementById("btnRescanAgents");
         this.btnLaunchLab = document.getElementById("btnLaunchLab");
+        this.projectSelect = document.getElementById("projectSelect");
         this.modelSelect = document.getElementById("modelSelect");
         this.reasoningSelect = document.getElementById("reasoningSelect");
         this.reasoningField = document.getElementById("reasoningField");
         this.setupHint = document.getElementById("setupHint");
+        this.setupProjectName = document.getElementById("setupProjectName");
+        this.setupProjectDesc = document.getElementById("setupProjectDesc");
         this.selectedAgentName = document.getElementById("selectedAgentName");
         this.selectedModelName = document.getElementById("selectedModelName");
         this.btnValidate = document.getElementById("btnValidate");
@@ -42,6 +47,9 @@ class OpenFigureLabApp {
         this.qaContent = document.getElementById("qaContent");
         this.runLog = document.getElementById("runLog");
         this.tabs = document.querySelectorAll(".tab");
+        this.commandInput = document.getElementById("commandInput");
+        this.btnSendPrompt = document.getElementById("btnSendPrompt");
+        this.agentThread = document.querySelector(".agent-thread");
     }
 
     bindEvents() {
@@ -50,13 +58,21 @@ class OpenFigureLabApp {
             this.launchLab();
         });
         this.btnRescanAgents.addEventListener("click", () => this.scanAgents(true));
+        this.projectSelect.addEventListener("change", () => {
+            this.selectedProject = this.projectSelect.value || "soc_proxy_fig2";
+            this.projectName = this.selectedProject;
+            this.updateSetupSummary();
+            this.saveSessionConfig();
+        });
         this.modelSelect.addEventListener("change", () => {
             this.selectedModel = this.modelSelect.value || "default";
             this.updateSelectedAgentSummary();
+            this.saveSessionConfig();
         });
         this.reasoningSelect.addEventListener("change", () => {
             this.selectedReasoning = this.reasoningSelect.value || "default";
             this.updateSelectedAgentSummary();
+            this.saveSessionConfig();
         });
         this.btnValidate.addEventListener("click", () => this.executeCommand("validate"));
         this.btnRender.addEventListener("click", () => this.executeCommand("render"));
@@ -65,6 +81,18 @@ class OpenFigureLabApp {
         this.btnClearLog.addEventListener("click", () => this.clearLog());
         this.tabs.forEach((tab) => {
             tab.addEventListener("click", () => this.switchTab(tab));
+        });
+        this.commandInput.addEventListener("input", () => {
+            this.btnSendPrompt.disabled = !this.commandInput.value.trim();
+        });
+        this.btnSendPrompt.addEventListener("click", () => this.sendAgentPrompt());
+        this.commandInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                if (this.commandInput.value.trim()) {
+                    this.sendAgentPrompt();
+                }
+            }
         });
     }
 
@@ -82,6 +110,70 @@ class OpenFigureLabApp {
         } catch (err) {
             this.agentList.innerHTML = `<div class="agent-loading error">Failed to scan agents: ${this.escapeHtml(err.message)}</div>`;
             this.setupHint.textContent = "The local API server could not return agent information.";
+        }
+    }
+
+    async loadSessionAndProjects() {
+        try {
+            const [projectsRes, configRes] = await Promise.all([
+                fetch(`${this.apiBase}/api/projects`),
+                fetch(`${this.apiBase}/api/session-config`),
+            ]);
+            const projectsData = await projectsRes.json();
+            const config = await configRes.json();
+            this.projects = Array.isArray(projectsData.projects) ? projectsData.projects : [];
+            this.selectedProject = config.project || "soc_proxy_fig2";
+            this.projectName = this.selectedProject;
+            this.renderProjectPicker();
+            this.updateSetupSummary();
+        } catch (err) {
+            console.error("Failed to load session/projects:", err);
+        }
+        this.scanAgents();
+    }
+
+    renderProjectPicker() {
+        this.projectSelect.innerHTML = "";
+        for (const proj of this.projects) {
+            const option = document.createElement("option");
+            option.value = proj.name;
+            option.textContent = proj.name;
+            if (proj.name === this.selectedProject) {
+                option.selected = true;
+            }
+            this.projectSelect.appendChild(option);
+        }
+        if (this.projects.length === 0) {
+            const option = document.createElement("option");
+            option.value = this.selectedProject;
+            option.textContent = this.selectedProject;
+            this.projectSelect.appendChild(option);
+        }
+    }
+
+    updateSetupSummary() {
+        if (this.setupProjectName) {
+            this.setupProjectName.textContent = this.selectedProject;
+        }
+        if (this.setupProjectDesc) {
+            this.setupProjectDesc.textContent = "Figure project";
+        }
+    }
+
+    async saveSessionConfig() {
+        try {
+            await fetch(`${this.apiBase}/api/session-config`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    project: this.selectedProject,
+                    agentId: this.selectedAgentId,
+                    model: this.selectedModel,
+                    reasoning: this.selectedReasoning,
+                }),
+            });
+        } catch (err) {
+            console.error("Failed to save session config:", err);
         }
     }
 
@@ -145,16 +237,20 @@ class OpenFigureLabApp {
         this.selectedReasoning = reasoningOptions.length > 0 ? reasoningOptions[0].id : "default";
     }
 
-    launchLab() {
+    async launchLab() {
         const selected = this.getSelectedAgent();
         if (!selected) {
             return;
         }
+        this.projectName = this.selectedProject;
+        await this.saveSessionConfig();
         this.entryView.classList.add("hidden");
         this.labView.classList.remove("hidden");
+        document.getElementById("projectName").textContent = this.projectName;
         this.updateSelectedAgentSummary();
         this.loadInitialData();
         this.addLogEntry("Workbench initialized", "output");
+        this.addLogEntry(`Project: ${this.projectName}`, "command");
         this.addLogEntry(`Agent runtime: ${selected.name} / ${this.selectedModel}`, "command");
     }
 
@@ -333,6 +429,60 @@ class OpenFigureLabApp {
         entry.appendChild(msg);
         this.runLog.appendChild(entry);
         this.runLog.scrollTop = this.runLog.scrollHeight;
+    }
+
+    async sendAgentPrompt() {
+        const prompt = this.commandInput.value.trim();
+        if (!prompt || this.isSendingPrompt) {
+            return;
+        }
+
+        this.isSendingPrompt = true;
+        this.btnSendPrompt.disabled = true;
+        this.commandInput.disabled = true;
+
+        // Show user message in Agent Console
+        this.appendAgentMessage(prompt, "user");
+        this.commandInput.value = "";
+
+        try {
+            const res = await fetch(`${this.apiBase}/api/agent-runs`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    agentId: this.selectedAgentId,
+                    model: this.selectedModel,
+                    reasoning: this.selectedReasoning,
+                    project: this.projectName,
+                    prompt: prompt,
+                }),
+            });
+            const data = await res.json();
+
+            if (!res.ok) {
+                this.appendAgentMessage(`Error: ${data.error || "Request failed"}`, "system");
+                this.addLogEntry(`Agent run failed: ${data.error || res.status}`, "error");
+            } else {
+                this.addLogEntry(`Run created: ${data.id} (${data.status})`, "command");
+                this.appendAgentMessage(`Run ${data.id} — ${data.status}`, "system");
+            }
+        } catch (err) {
+            this.appendAgentMessage(`Error: ${err.message}`, "system");
+            this.addLogEntry(`Agent run error: ${err.message}`, "error");
+        } finally {
+            this.isSendingPrompt = false;
+            this.commandInput.disabled = false;
+            this.btnSendPrompt.disabled = !this.commandInput.value.trim();
+            this.commandInput.focus();
+        }
+    }
+
+    appendAgentMessage(text, role) {
+        const msg = document.createElement("div");
+        msg.className = `agent-message ${role}`;
+        msg.textContent = text;
+        this.agentThread.appendChild(msg);
+        this.agentThread.scrollTop = this.agentThread.scrollHeight;
     }
 
     clearLog() {
