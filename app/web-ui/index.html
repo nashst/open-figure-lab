@@ -7,106 +7,134 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <header class="topbar">
-        <div class="topbar-left">
-            <span class="logo">◆</span>
-            <span class="app-name">Open Figure Lab</span>
-        </div>
-        <div class="topbar-center">
-            <span id="projectName" class="project-name">soc_proxy_fig2</span>
-        </div>
-        <div class="topbar-right">
-            <span class="version">v0.1.0</span>
-        </div>
-    </header>
-
-    <div class="workbench">
-        <!-- Left Panel: Command -->
-        <aside class="panel panel-command">
-            <div class="panel-header">
-                <span class="panel-icon">▸</span>
-                <span class="panel-title">Command</span>
+    <aside class="workspace-rail" aria-label="Workspace navigation">
+        <div class="brand-block">
+            <div class="brand-mark">OFL</div>
+            <div>
+                <div class="brand-name">Open Figure Lab</div>
+                <div class="brand-subtitle">Local figure workbench</div>
             </div>
-            <div class="panel-body">
-                <div class="command-section">
-                    <div class="section-label">Actions</div>
-                    <div class="command-buttons">
-                        <button id="btnValidate" class="btn btn-action">
-                            <span class="btn-icon">✓</span>
-                            <span>Validate</span>
-                        </button>
-                        <button id="btnRender" class="btn btn-action">
-                            <span class="btn-icon">◉</span>
-                            <span>Render</span>
-                        </button>
-                        <button id="btnQA" class="btn btn-action">
-                            <span class="btn-icon">◈</span>
-                            <span>QA</span>
-                        </button>
+        </div>
+
+        <nav class="rail-nav" aria-label="Primary">
+            <button class="rail-item active" type="button">Workspace</button>
+            <button class="rail-item" type="button">Figures</button>
+            <button class="rail-item" type="button">Data</button>
+            <button class="rail-item" type="button">Skills</button>
+        </nav>
+
+        <div class="project-card">
+            <div class="eyebrow">Current Project</div>
+            <div id="projectName" class="project-name">soc_proxy_fig2</div>
+            <div class="project-meta">Nature preset / 2 x 2 figure</div>
+        </div>
+
+        <div class="rail-footer">
+            <button class="rail-item" type="button">Settings</button>
+            <button class="rail-item" type="button">Handoff</button>
+        </div>
+    </aside>
+
+    <main class="app-shell">
+        <header class="topbar">
+            <div>
+                <div class="eyebrow">Artifact-first canvas</div>
+                <h1>Scientific figure workspace</h1>
+            </div>
+            <div class="topbar-actions">
+                <span class="status-pill" id="statusPill">Ready</span>
+                <button id="btnValidate" class="button secondary" type="button">Validate</button>
+                <button id="btnRender" class="button primary" type="button">Render</button>
+                <button id="btnQA" class="button secondary" type="button">QA</button>
+            </div>
+        </header>
+
+        <section class="workspace-grid">
+            <section class="canvas-panel" aria-label="Figure preview">
+                <div class="canvas-toolbar">
+                    <div class="toolbar-group">
+                        <button class="tool-button active" type="button" title="Select">Select</button>
+                        <button class="tool-button" type="button" title="Pan">Pan</button>
+                        <button class="tool-button" type="button" title="Measure">Measure</button>
+                    </div>
+                    <div class="toolbar-group">
+                        <button id="btnRefresh" class="tool-button" type="button">Refresh preview</button>
                     </div>
                 </div>
-                <div class="command-section">
-                    <div class="section-label">Status</div>
-                    <div class="command-status">
-                        <span id="statusIndicator" class="status-dot"></span>
-                        <span id="statusText">Ready</span>
+
+                <div class="preview-stage">
+                    <div class="paper-frame">
+                        <div id="previewEmpty" class="empty-state">
+                            <div class="empty-title">No rendered figure</div>
+                            <div class="empty-copy">Run Render to generate the current figure artifact.</div>
+                        </div>
+                        <img id="previewImage" class="preview-image" alt="Rendered scientific figure preview">
                     </div>
                 </div>
-            </div>
-        </aside>
 
-        <!-- Center Panel: Figure Preview -->
-        <main class="panel panel-preview">
-            <div class="panel-header">
-                <span class="panel-icon">□</span>
-                <span class="panel-title">Figure Preview</span>
-                <button id="btnRefresh" class="btn btn-icon-only" title="Refresh">↻</button>
-            </div>
-            <div class="panel-body">
-                <div id="previewContainer" class="preview-container">
-                    <div id="previewEmpty" class="empty-state">
-                        <div class="empty-icon">◇</div>
-                        <div class="empty-text">No figure rendered</div>
-                        <div class="empty-hint">Click <strong>Render</strong> to generate</div>
+                <footer class="canvas-status">
+                    <span id="previewInfo">No output loaded</span>
+                    <span>Export targets: SVG / PDF / PNG</span>
+                </footer>
+            </section>
+
+            <aside class="right-dock" aria-label="Inspector and agent">
+                <section class="inspector-panel">
+                    <div class="panel-title-row">
+                        <div>
+                            <div class="eyebrow">Inspector</div>
+                            <h2>Spec and QA</h2>
+                        </div>
+                        <div class="tab-strip" role="tablist" aria-label="Inspector tabs">
+                            <button class="tab active" data-tab="spec" type="button">Spec</button>
+                            <button class="tab" data-tab="data" type="button">Data</button>
+                            <button class="tab" data-tab="qa" type="button">QA</button>
+                        </div>
                     </div>
-                    <img id="previewImage" class="preview-image" style="display: none;" alt="Figure preview">
+                    <div class="inspector-content">
+                        <pre id="specContent" class="code-block"></pre>
+                        <pre id="dataContent" class="code-block hidden"></pre>
+                        <div id="qaContent" class="qa-content hidden"></div>
+                    </div>
+                </section>
+
+                <section class="agent-panel">
+                    <div class="panel-title-row compact">
+                        <div>
+                            <div class="eyebrow">Agent Console</div>
+                            <h2>Figure operator</h2>
+                        </div>
+                        <span class="agent-state">Local</span>
+                    </div>
+
+                    <div class="agent-thread">
+                        <div class="agent-message system">
+                            I can validate the figure spec, render the artifact, and run data QA for the current project.
+                        </div>
+                        <div class="agent-message user">
+                            Keep the data layer unchanged and regenerate the publication figure.
+                        </div>
+                    </div>
+
+                    <div class="command-box">
+                        <label for="commandInput">Command draft</label>
+                        <textarea id="commandInput" rows="3" placeholder="Ask the agent to revise layout, inspect QA, or export assets." disabled></textarea>
+                    </div>
+                </section>
+            </aside>
+        </section>
+
+        <section class="run-log-panel" aria-label="Run log">
+            <div class="panel-title-row compact">
+                <div>
+                    <div class="eyebrow">Trace</div>
+                    <h2>Run log</h2>
                 </div>
+                <button id="btnClearLog" class="button ghost" type="button">Clear</button>
             </div>
-            <div class="panel-footer">
-                <span id="previewInfo" class="preview-info">—</span>
-            </div>
-        </main>
-
-        <!-- Right Panel: Inspector -->
-        <aside class="panel panel-inspector">
-            <div class="panel-header">
-                <span class="panel-icon">◉</span>
-                <span class="panel-title">Inspector</span>
-            </div>
-            <div class="panel-tabs">
-                <button class="tab active" data-tab="spec">Spec</button>
-                <button class="tab" data-tab="data">Data</button>
-                <button class="tab" data-tab="qa">QA</button>
-            </div>
-            <div class="panel-body">
-                <pre id="specContent" class="code-block"></pre>
-                <pre id="dataContent" class="code-block" style="display: none;"></pre>
-                <div id="qaContent" class="qa-content" style="display: none;"></div>
-            </div>
-        </aside>
-    </div>
-
-    <!-- Bottom Panel: Run Log -->
-    <footer class="panel panel-log">
-        <div class="panel-header">
-            <span class="panel-icon">▷</span>
-            <span class="panel-title">Run Log</span>
-            <button id="btnClearLog" class="btn btn-icon-only" title="Clear log">✕</button>
-        </div>
-        <div class="panel-body">
             <div id="runLog" class="run-log"></div>
-        </div>
-    </footer>
+        </section>
+    </main>
 
     <script src="app.js"></script>
 </body>

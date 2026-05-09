@@ -110,3 +110,25 @@ Open:
 - No file editing capabilities
 - No theme switching
 - Frontend could be enhanced with better error handling
+
+## 2026-05-09 Codex - Stitch-Inspired Web UI Redesign
+
+Changed:
+
+- Replaced the dark skeleton workbench with a light scientific "digital paper" workspace inspired by the Stitch reference package.
+- Reframed the UI around an artifact canvas, fixed workspace rail, right inspector, agent context panel, and run trace.
+- Removed mojibake/icon glyph dependencies from the web UI and kept labels ASCII-safe.
+- Updated frontend command handling to match the current API response contract (`success`, `stdout`, `stderr`, `returncode`).
+
+Verified:
+
+- `PYTHONPATH=src python -m unittest discover -s tests -v`
+- `PYTHONPATH=src python -m open_figure_lab.cli render examples/soc_proxy_fig2 --format png`
+- `PYTHONPATH=src python -m open_figure_lab.cli qa examples/soc_proxy_fig2`
+- HTTP smoke test on `http://127.0.0.1:8090` for `/`, `/styles.css`, `/app.js`, `/api/project`, `/api/spec`, `/api/data-manifest`, `/api/qa-report`, `/outputs/soc_proxy_fig2.png`, and POST `/api/validate`, `/api/render`, `/api/qa`.
+
+Open:
+
+- Still no real LLM/agent editing loop; command draft remains disabled.
+- Project selection is still hardcoded to `soc_proxy_fig2`.
+- Browser-level visual QA was not automated in this pass because Playwright/browser automation was unavailable in the current environment.
