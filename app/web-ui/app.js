@@ -3,16 +3,31 @@ class OpenFigureLabApp {
         this.apiBase = "";
         this.isRunning = false;
         this.projectName = "soc_proxy_fig2";
+        this.agents = [];
+        this.selectedAgentId = null;
+        this.selectedModel = "default";
+        this.selectedReasoning = "default";
     }
 
     init() {
         this.cacheElements();
         this.bindEvents();
-        this.loadInitialData();
-        this.addLogEntry("Workbench initialized", "output");
+        this.scanAgents();
     }
 
     cacheElements() {
+        this.entryView = document.getElementById("entryView");
+        this.labView = document.getElementById("labView");
+        this.agentSetupForm = document.getElementById("agentSetupForm");
+        this.agentList = document.getElementById("agentList");
+        this.btnRescanAgents = document.getElementById("btnRescanAgents");
+        this.btnLaunchLab = document.getElementById("btnLaunchLab");
+        this.modelSelect = document.getElementById("modelSelect");
+        this.reasoningSelect = document.getElementById("reasoningSelect");
+        this.reasoningField = document.getElementById("reasoningField");
+        this.setupHint = document.getElementById("setupHint");
+        this.selectedAgentName = document.getElementById("selectedAgentName");
+        this.selectedModelName = document.getElementById("selectedModelName");
         this.btnValidate = document.getElementById("btnValidate");
         this.btnRender = document.getElementById("btnRender");
         this.btnQA = document.getElementById("btnQA");
@@ -30,6 +45,19 @@ class OpenFigureLabApp {
     }
 
     bindEvents() {
+        this.agentSetupForm.addEventListener("submit", (event) => {
+            event.preventDefault();
+            this.launchLab();
+        });
+        this.btnRescanAgents.addEventListener("click", () => this.scanAgents(true));
+        this.modelSelect.addEventListener("change", () => {
+            this.selectedModel = this.modelSelect.value || "default";
+            this.updateSelectedAgentSummary();
+        });
+        this.reasoningSelect.addEventListener("change", () => {
+            this.selectedReasoning = this.reasoningSelect.value || "default";
+            this.updateSelectedAgentSummary();
+        });
         this.btnValidate.addEventListener("click", () => this.executeCommand("validate"));
         this.btnRender.addEventListener("click", () => this.executeCommand("render"));
         this.btnQA.addEventListener("click", () => this.executeCommand("qa"));
@@ -38,6 +66,110 @@ class OpenFigureLabApp {
         this.tabs.forEach((tab) => {
             tab.addEventListener("click", () => this.switchTab(tab));
         });
+    }
+
+    async scanAgents(force = false) {
+        this.agentList.innerHTML = '<div class="agent-loading">Scanning local PATH for agent CLIs...</div>';
+        this.btnLaunchLab.disabled = true;
+        this.setupHint.textContent = "Checking local CLI adapters...";
+        try {
+            const res = await fetch(`${this.apiBase}/api/agents${force ? "?refresh=1" : ""}`);
+            const data = await res.json();
+            this.agents = Array.isArray(data.agents) ? data.agents : [];
+            const firstAvailable = this.agents.find((agent) => agent.available);
+            this.selectedAgentId = firstAvailable ? firstAvailable.id : null;
+            this.renderAgentPicker();
+        } catch (err) {
+            this.agentList.innerHTML = `<div class="agent-loading error">Failed to scan agents: ${this.escapeHtml(err.message)}</div>`;
+            this.setupHint.textContent = "The local API server could not return agent information.";
+        }
+    }
+
+    renderAgentPicker() {
+        if (this.agents.length === 0) {
+            this.agentList.innerHTML = '<div class="agent-loading">No adapter definitions loaded.</div>';
+            this.setupHint.textContent = "No local agents were detected.";
+            return;
+        }
+
+        this.agentList.innerHTML = "";
+        for (const agent of this.agents) {
+            const row = document.createElement("button");
+            row.type = "button";
+            row.className = `agent-option ${agent.available ? "available" : "missing"} ${agent.id === this.selectedAgentId ? "active" : ""}`;
+            row.disabled = !agent.available;
+            row.innerHTML = `
+                <span>
+                    <strong>${this.escapeHtml(agent.name)}</strong>
+                    <small>${this.escapeHtml(agent.version || agent.path || "Not detected")}</small>
+                </span>
+                <em>${agent.available ? "Available" : "Missing"}</em>
+            `;
+            row.addEventListener("click", () => {
+                this.selectedAgentId = agent.id;
+                this.renderAgentPicker();
+            });
+            this.agentList.appendChild(row);
+        }
+
+        const selected = this.getSelectedAgent();
+        this.btnLaunchLab.disabled = !selected;
+        this.setupHint.textContent = selected
+            ? "Agent selected. Choose a model or keep the CLI default."
+            : "Install OpenCode, Claude Code, Codex, Cursor Agent, or Gemini CLI if no agent is available.";
+        this.renderModelPicker(selected);
+    }
+
+    renderModelPicker(agent) {
+        const models = agent && Array.isArray(agent.models) && agent.models.length > 0
+            ? agent.models
+            : [{ id: "default", label: "Default (CLI config)" }];
+        this.modelSelect.innerHTML = "";
+        for (const model of models) {
+            const option = document.createElement("option");
+            option.value = model.id;
+            option.textContent = model.label || model.id;
+            this.modelSelect.appendChild(option);
+        }
+        this.selectedModel = models[0].id;
+
+        const reasoningOptions = agent && Array.isArray(agent.reasoningOptions) ? agent.reasoningOptions : [];
+        this.reasoningSelect.innerHTML = "";
+        for (const optionDef of reasoningOptions) {
+            const option = document.createElement("option");
+            option.value = optionDef.id;
+            option.textContent = optionDef.label || optionDef.id;
+            this.reasoningSelect.appendChild(option);
+        }
+        this.reasoningField.classList.toggle("hidden", reasoningOptions.length === 0);
+        this.selectedReasoning = reasoningOptions.length > 0 ? reasoningOptions[0].id : "default";
+    }
+
+    launchLab() {
+        const selected = this.getSelectedAgent();
+        if (!selected) {
+            return;
+        }
+        this.entryView.classList.add("hidden");
+        this.labView.classList.remove("hidden");
+        this.updateSelectedAgentSummary();
+        this.loadInitialData();
+        this.addLogEntry("Workbench initialized", "output");
+        this.addLogEntry(`Agent runtime: ${selected.name} / ${this.selectedModel}`, "command");
+    }
+
+    getSelectedAgent() {
+        return this.agents.find((agent) => agent.id === this.selectedAgentId && agent.available) || null;
+    }
+
+    updateSelectedAgentSummary() {
+        const selected = this.getSelectedAgent();
+        if (!selected) {
+            return;
+        }
+        this.selectedAgentName.textContent = selected.name;
+        const reasoning = this.selectedReasoning && this.selectedReasoning !== "default" ? ` / ${this.selectedReasoning}` : "";
+        this.selectedModelName.textContent = `${this.selectedModel || "default"}${reasoning}`;
     }
 
     async loadInitialData() {

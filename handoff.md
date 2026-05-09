@@ -132,3 +132,27 @@ Open:
 - Still no real LLM/agent editing loop; command draft remains disabled.
 - Project selection is still hardcoded to `soc_proxy_fig2`.
 - Browser-level visual QA was not automated in this pass because Playwright/browser automation was unavailable in the current environment.
+
+## 2026-05-09 Codex - OpenDesign-Style Agent Entry
+
+Changed:
+
+- Cloned `nexu-io/open-design` into `D:\Acodeproject\Temp\open-design` as a read-only reference.
+- Added an OpenDesign-style `/api/agents` endpoint that detects local CLI agents from `PATH`.
+- Added fallback model lists for OpenCode, Claude Code, Codex CLI, Cursor Agent, and Gemini CLI.
+- Switched the Web UI to start on an Agent Runtime setup screen before entering the Lab.
+- Added a short-lived agent detection cache and threaded HTTP server so CLI probes do not block unrelated UI/API requests.
+- Documented the OpenDesign runtime boundary in `docs/architecture.md`.
+
+Verified:
+
+- `python -m py_compile app\api\server.py app\start.py`
+- `node --check app\web-ui\app.js`
+- `PYTHONPATH=src python -m unittest discover -s tests -v`
+- HTTP smoke test on `http://127.0.0.1:8090` for `/api/agents` and POST `/api/validate`.
+
+Open:
+
+- Agent selection is persisted only in browser memory for this MVP pass.
+- Agent streaming/chat execution is not wired yet; the Lab still uses validate/render/QA CLI API endpoints.
+- `/api/agents` currently detects local binaries and models but does not verify auth/account health.

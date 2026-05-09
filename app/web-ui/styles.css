@@ -37,6 +37,212 @@ body {
     height: 100%;
 }
 
+.entry-view,
+.lab-view {
+    width: 100%;
+    height: 100%;
+}
+
+.lab-view {
+    display: flex;
+}
+
+.entry-view {
+    display: grid;
+    place-items: center;
+    padding: 28px;
+    background:
+        linear-gradient(to right, rgba(194, 198, 214, 0.38) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(194, 198, 214, 0.38) 1px, transparent 1px),
+        var(--background);
+    background-size: 20px 20px;
+}
+
+.entry-shell {
+    width: min(1120px, 100%);
+    display: grid;
+    grid-template-columns: minmax(360px, 1fr) 440px;
+    gap: 28px;
+    align-items: center;
+}
+
+.entry-copy {
+    max-width: 620px;
+}
+
+.entry-brand {
+    margin-bottom: 38px;
+}
+
+.entry-copy h1 {
+    margin-top: 6px;
+    font-size: 42px;
+    letter-spacing: 0;
+}
+
+.entry-copy p {
+    max-width: 560px;
+    color: var(--text-muted);
+    font-size: 16px;
+}
+
+.entry-principles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 24px;
+}
+
+.entry-principles span {
+    border: 1px solid var(--border-soft);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--text-muted);
+    padding: 6px 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+}
+
+.agent-setup-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    box-shadow: 0 18px 48px rgba(25, 28, 30, 0.1);
+    overflow: hidden;
+}
+
+.agent-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 14px;
+}
+
+.agent-loading {
+    border: 1px dashed var(--border-soft);
+    border-radius: var(--radius-lg);
+    color: var(--text-subtle);
+    padding: 16px;
+}
+
+.agent-loading.error {
+    border-color: var(--error);
+    color: var(--error);
+}
+
+.agent-option {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    color: var(--text);
+    padding: 11px;
+    text-align: left;
+}
+
+.agent-option:hover,
+.agent-option.active {
+    border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
+    background: color-mix(in srgb, var(--primary-soft) 55%, white);
+}
+
+.agent-option:disabled {
+    cursor: not-allowed;
+    opacity: 0.56;
+}
+
+.agent-option span {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.agent-option small {
+    overflow: hidden;
+    color: var(--text-subtle);
+    font-family: var(--mono);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.agent-option em {
+    color: var(--text-subtle);
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 700;
+}
+
+.agent-option.available em {
+    color: var(--green);
+}
+
+.setup-fields {
+    display: grid;
+    grid-template-columns: 1fr 0.65fr;
+    gap: 10px;
+    padding: 0 14px 14px;
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.field span {
+    color: var(--text-subtle);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.field select {
+    min-width: 0;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius);
+    background: var(--surface-low);
+    color: var(--text);
+    padding: 8px 9px;
+    font: inherit;
+}
+
+.setup-summary {
+    border-top: 1px solid var(--border-soft);
+    border-bottom: 1px solid var(--border-soft);
+    background: var(--surface-low);
+    padding: 14px;
+}
+
+.setup-summary div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.setup-summary span {
+    color: var(--text-subtle);
+    font-size: 12px;
+}
+
+.launch-button {
+    width: calc(100% - 28px);
+    margin: 14px;
+}
+
+.setup-hint {
+    margin: 0;
+    padding: 0 14px 16px;
+    color: var(--text-subtle);
+    font-size: 12px;
+}
+
 body {
     margin: 0;
     display: flex;
@@ -440,7 +646,7 @@ h2 {
 }
 
 .hidden {
-    display: none;
+    display: none !important;
 }
 
 .qa-content {
@@ -592,5 +798,13 @@ h2 {
     :root {
         --rail-width: 220px;
         --right-width: 340px;
+    }
+
+    .entry-shell {
+        grid-template-columns: 1fr;
+    }
+
+    .entry-copy h1 {
+        font-size: 32px;
     }
 }

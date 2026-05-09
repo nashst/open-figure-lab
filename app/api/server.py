@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+import time
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -15,6 +17,76 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 CLI_MODULE = "open_figure_lab.cli"
 DEFAULT_PORT = 8080
 DEFAULT_PROJECT = ROOT / "examples" / "soc_proxy_fig2"
+DEFAULT_MODEL_OPTION = {"id": "default", "label": "Default (CLI config)"}
+AGENT_CACHE_TTL_SECONDS = 60
+_AGENT_CACHE: dict[str, object] = {"expires_at": 0.0, "agents": []}
+AGENT_DEFS = [
+    {
+        "id": "opencode",
+        "name": "OpenCode",
+        "bin": "opencode",
+        "version_args": ["--version"],
+        "models_args": ["models"],
+        "fallback_models": [
+            DEFAULT_MODEL_OPTION,
+        ],
+    },
+    {
+        "id": "claude",
+        "name": "Claude Code",
+        "bin": "claude",
+        "fallback_bins": ["openclaude"],
+        "version_args": ["--version"],
+        "fallback_models": [
+            DEFAULT_MODEL_OPTION,
+            {"id": "sonnet", "label": "Sonnet (alias)"},
+            {"id": "opus", "label": "Opus (alias)"},
+            {"id": "haiku", "label": "Haiku (alias)"},
+        ],
+    },
+    {
+        "id": "codex",
+        "name": "Codex CLI",
+        "bin": "codex",
+        "version_args": ["--version"],
+        "fallback_models": [
+            DEFAULT_MODEL_OPTION,
+            {"id": "gpt-5.5", "label": "gpt-5.5"},
+            {"id": "gpt-5.4", "label": "gpt-5.4"},
+            {"id": "gpt-5.4-mini", "label": "gpt-5.4-mini"},
+            {"id": "gpt-5.3-codex", "label": "gpt-5.3-codex"},
+        ],
+        "reasoning_options": [
+            {"id": "default", "label": "Default"},
+            {"id": "low", "label": "Low"},
+            {"id": "medium", "label": "Medium"},
+            {"id": "high", "label": "High"},
+            {"id": "xhigh", "label": "XHigh"},
+        ],
+    },
+    {
+        "id": "cursor-agent",
+        "name": "Cursor Agent",
+        "bin": "cursor-agent",
+        "version_args": ["--version"],
+        "models_args": ["models"],
+        "fallback_models": [
+            DEFAULT_MODEL_OPTION,
+        ],
+    },
+    {
+        "id": "gemini",
+        "name": "Gemini CLI",
+        "bin": "gemini",
+        "version_args": ["--version"],
+        "fallback_models": [
+            DEFAULT_MODEL_OPTION,
+            {"id": "gemini-3-pro", "label": "gemini-3-pro"},
+            {"id": "gemini-2.5-pro", "label": "gemini-2.5-pro"},
+            {"id": "gemini-2.5-flash", "label": "gemini-2.5-flash"},
+        ],
+    },
+]
 
 
 def _get_project_root() -> Path:
@@ -43,6 +115,77 @@ def _read_text(path: Path) -> str | None:
     if not path.exists():
         return None
     return path.read_text(encoding="utf-8")
+
+
+def _run_probe(command: str, args: list[str], timeout: float = 3.0) -> tuple[int, str, str]:
+    """Run a short CLI probe without failing the HTTP request."""
+    try:
+        proc = subprocess.run(
+            [command] + args,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except Exception as exc:
+        return 1, "", str(exc)
+    return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
+
+
+def _parse_line_models(stdout: str, fallback: list[dict]) -> list[dict]:
+    """Parse one-model-id-per-line output, matching OpenDesign's basic model picker shape."""
+    seen = {"default"}
+    models = [DEFAULT_MODEL_OPTION]
+    for raw in stdout.splitlines():
+        model_id = raw.strip()
+        if not model_id or model_id.startswith("#") or model_id in seen:
+            continue
+        seen.add(model_id)
+        models.append({"id": model_id, "label": model_id})
+    if len(models) == 1:
+        return fallback
+    return models
+
+
+def _detect_agents() -> list[dict]:
+    """Detect local coding-agent CLIs in the same spirit as OpenDesign's adapter picker."""
+    detected: list[dict] = []
+    for agent_def in AGENT_DEFS:
+        candidates = [agent_def["bin"]] + agent_def.get("fallback_bins", [])
+        executable = next((shutil.which(candidate) for candidate in candidates if shutil.which(candidate)), None)
+        available = executable is not None
+        version = None
+        models = agent_def.get("fallback_models", [DEFAULT_MODEL_OPTION])
+
+        if available:
+            code, stdout, stderr = _run_probe(executable, agent_def.get("version_args", ["--version"]))
+            version = stdout or stderr or ("available" if code == 0 else None)
+            if agent_def.get("models_args"):
+                model_code, model_stdout, _model_stderr = _run_probe(executable, agent_def["models_args"], timeout=5.0)
+                if model_code == 0 and model_stdout:
+                    models = _parse_line_models(model_stdout, models)
+
+        detected.append({
+            "id": agent_def["id"],
+            "name": agent_def["name"],
+            "bin": agent_def["bin"],
+            "available": available,
+            "path": executable,
+            "version": version,
+            "models": models,
+            "reasoningOptions": agent_def.get("reasoning_options", []),
+        })
+    return detected
+
+
+def _cached_agents(force: bool = False) -> list[dict]:
+    """Return cached agent detection results so cold CLI probes do not block every UI request."""
+    now = time.time()
+    if not force and now < float(_AGENT_CACHE["expires_at"]):
+        return list(_AGENT_CACHE["agents"])
+    agents = _detect_agents()
+    _AGENT_CACHE["agents"] = agents
+    _AGENT_CACHE["expires_at"] = now + AGENT_CACHE_TTL_SECONDS
+    return agents
 
 
 class APIHandler(SimpleHTTPRequestHandler):
@@ -110,6 +253,8 @@ class APIHandler(SimpleHTTPRequestHandler):
             self._serve_static_file("app.js", "application/javascript")
         elif path == "/api/project":
             self._handle_get_project()
+        elif path == "/api/agents":
+            self._handle_get_agents(parsed.query)
         elif path == "/api/spec":
             self._handle_get_spec()
         elif path == "/api/data-manifest":
@@ -143,6 +288,9 @@ class APIHandler(SimpleHTTPRequestHandler):
             "path": str(project),
             "exists": project.exists(),
         })
+
+    def _handle_get_agents(self, query: str = "") -> None:
+        self._json_response({"agents": _cached_agents(force="refresh=1" in query)})
 
     def _handle_get_spec(self) -> None:
         spec_path = _get_project_root() / "spec" / "figure.yaml"
@@ -235,7 +383,7 @@ class APIHandler(SimpleHTTPRequestHandler):
 
 def run_server(host: str = "localhost", port: int = DEFAULT_PORT) -> None:
     """Start the API server."""
-    server = HTTPServer((host, port), APIHandler)
+    server = ThreadingHTTPServer((host, port), APIHandler)
     print(f"Open Figure Lab API server running on http://{host}:{port}")
     try:
         server.serve_forever()

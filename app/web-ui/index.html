@@ -7,6 +7,68 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+    <section id="entryView" class="entry-view" aria-label="Agent setup">
+        <div class="entry-shell">
+            <div class="entry-copy">
+                <div class="brand-block entry-brand">
+                    <div class="brand-mark">OFL</div>
+                    <div>
+                        <div class="brand-name">Open Figure Lab</div>
+                        <div class="brand-subtitle">Local-first scientific figure lab</div>
+                    </div>
+                </div>
+                <div class="eyebrow">Agent Runtime</div>
+                <h1>Choose the local coding agent before entering the Lab.</h1>
+                <p>
+                    Open Figure Lab follows OpenDesign's boundary: the app does not replace your agent.
+                    It detects local CLI agents, lets you choose the model, then starts the figure workspace.
+                </p>
+                <div class="entry-principles">
+                    <span>PATH detection</span>
+                    <span>CLI model picker</span>
+                    <span>Skill-driven lab</span>
+                </div>
+            </div>
+
+            <form id="agentSetupForm" class="agent-setup-card">
+                <div class="panel-title-row">
+                    <div>
+                        <div class="eyebrow">Step 1</div>
+                        <h2>Execution engine</h2>
+                    </div>
+                    <button id="btnRescanAgents" class="button secondary" type="button">Rescan</button>
+                </div>
+
+                <div id="agentList" class="agent-list" aria-live="polite">
+                    <div class="agent-loading">Scanning local PATH for agent CLIs...</div>
+                </div>
+
+                <div class="setup-fields">
+                    <label class="field">
+                        <span>Model</span>
+                        <select id="modelSelect"></select>
+                    </label>
+                    <label class="field" id="reasoningField">
+                        <span>Reasoning</span>
+                        <select id="reasoningSelect"></select>
+                    </label>
+                </div>
+
+                <div class="setup-summary">
+                    <div>
+                        <div class="eyebrow">Current Lab</div>
+                        <strong>soc_proxy_fig2</strong>
+                        <span>Nature preset / trusted CSV data / reproducible outputs</span>
+                    </div>
+                </div>
+
+                <button id="btnLaunchLab" class="button primary launch-button" type="submit" disabled>Start Lab</button>
+                <p id="setupHint" class="setup-hint">Install OpenCode, Claude Code, Codex, Cursor Agent, or Gemini CLI if no agent is available.</p>
+            </form>
+        </div>
+    </section>
+
+    <section id="labView" class="lab-view hidden" aria-label="Open Figure Lab workspace">
     <aside class="workspace-rail" aria-label="Workspace navigation">
         <div class="brand-block">
             <div class="brand-mark">OFL</div>
@@ -27,6 +89,12 @@
             <div class="eyebrow">Current Project</div>
             <div id="projectName" class="project-name">soc_proxy_fig2</div>
             <div class="project-meta">Nature preset / 2 x 2 figure</div>
+        </div>
+
+        <div class="project-card">
+            <div class="eyebrow">Agent</div>
+            <div id="selectedAgentName" class="project-name">Not selected</div>
+            <div id="selectedModelName" class="project-meta">Default model</div>
         </div>
 
         <div class="rail-footer">
@@ -135,6 +203,7 @@
             <div id="runLog" class="run-log"></div>
         </section>
     </main>
+    </section>
 
     <script src="app.js"></script>
 </body>
