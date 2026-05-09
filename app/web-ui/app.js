@@ -27,7 +27,6 @@ class OpenFigureLabApp {
         this.qaContent = document.getElementById('qaContent');
         this.runLog = document.getElementById('runLog');
         this.tabs = document.querySelectorAll('.tab');
-        this.projectNameEl = document.getElementById('projectName');
     }
 
     bindEvents() {
@@ -45,9 +44,9 @@ class OpenFigureLabApp {
         await Promise.all([
             this.fetchSpec(),
             this.fetchDataManifest(),
-            this.fetchQAReport(),
-            this.loadPreview()
+            this.fetchQAReport()
         ]);
+        this.loadPreview();
     }
 
     async fetchSpec() {
@@ -88,7 +87,7 @@ class OpenFigureLabApp {
                 this.qaContent.innerHTML = '<p class="qa-empty">No QA report. Run QA first.</p>';
             }
         } catch (err) {
-            this.qaContent.innerHTML = `<p class="qa-error">Failed to load: ${err.message}</p>`;
+            this.qaContent.innerHTML = `<p class="qa-empty">Failed to load: ${err.message}</p>`;
         }
     }
 
@@ -97,44 +96,35 @@ class OpenFigureLabApp {
         let html = '';
         for (const line of lines) {
             if (line.startsWith('# ')) {
-                html += `<h3>${line.slice(2)}</h3>`;
+                html += `<h3>${this.escapeHtml(line.slice(2))}</h3>`;
             } else if (line.startsWith('## ')) {
-                html += `<h4>${line.slice(3)}</h4>`;
+                html += `<h4>${this.escapeHtml(line.slice(3))}</h4>`;
             } else if (line.startsWith('- PASS:')) {
-                html += `<div class="qa-pass">✓${line.slice(7)}</div>`;
+                html += `<div class="qa-pass">✓ ${this.escapeHtml(line.slice(7).trim())}</div>`;
             } else if (line.startsWith('- ERROR:')) {
-                html += `<div class="qa-error">✗${line.slice(8)}</div>`;
+                html += `<div class="qa-error">✗ ${this.escapeHtml(line.slice(8).trim())}</div>`;
             } else if (line.startsWith('- WARNING:')) {
-                html += `<div class="qa-warning">⚠${line.slice(10)}</div>`;
+                html += `<div class="qa-warning">⚠ ${this.escapeHtml(line.slice(10).trim())}</div>`;
             } else if (line.trim()) {
-                html += `<div class="qa-line">${line}</div>`;
+                html += `<div class="qa-line">${this.escapeHtml(line)}</div>`;
             }
         }
         this.qaContent.innerHTML = html;
     }
 
-    async loadPreview() {
+    loadPreview() {
         const imgUrl = `${this.apiBase}/outputs/${this.projectName}.png?t=${Date.now()}`;
-        
-        try {
-            const res = await fetch(imgUrl, { method: 'HEAD' });
-            if (res.ok) {
-                this.previewImage.src = imgUrl;
-                this.previewImage.style.display = 'block';
-                this.previewEmpty.style.display = 'none';
-                this.previewInfo.textContent = `${this.projectName}.png`;
-            } else {
-                this.showEmptyPreview();
-            }
-        } catch {
-            this.showEmptyPreview();
-        }
-    }
-
-    showEmptyPreview() {
-        this.previewImage.style.display = 'none';
-        this.previewEmpty.style.display = 'flex';
-        this.previewInfo.textContent = 'No output';
+        this.previewImage.onload = () => {
+            this.previewImage.style.display = 'block';
+            this.previewEmpty.style.display = 'none';
+            this.previewInfo.textContent = `${this.projectName}.png`;
+        };
+        this.previewImage.onerror = () => {
+            this.previewImage.style.display = 'none';
+            this.previewEmpty.style.display = 'flex';
+            this.previewInfo.textContent = 'No output';
+        };
+        this.previewImage.src = imgUrl;
     }
 
     async executeCommand(command) {
@@ -149,18 +139,18 @@ class OpenFigureLabApp {
             const res = await fetch(`${this.apiBase}/api/${command}`, { method: 'POST' });
             const data = await res.json();
 
-            if (data.exit_code === 0) {
+            if (data.success === true) {
                 if (data.stdout) {
-                    this.addLogEntry(data.stdout.trim(), 'success');
+                    this.addLogEntry(data.stdout, 'success');
                 } else {
                     this.addLogEntry(`${command} completed`, 'success');
                 }
             } else {
                 if (data.stderr) {
-                    this.addLogEntry(data.stderr.trim(), 'error');
+                    this.addLogEntry(data.stderr, 'error');
                 }
                 if (data.stdout) {
-                    this.addLogEntry(data.stdout.trim(), 'output');
+                    this.addLogEntry(data.stdout, 'output');
                 }
             }
 
@@ -176,7 +166,7 @@ class OpenFigureLabApp {
 
     async refreshAfterCommand(command) {
         if (command === 'render') {
-            await this.loadPreview();
+            this.loadPreview();
         } else if (command === 'qa') {
             await this.fetchQAReport();
         }
@@ -223,6 +213,12 @@ class OpenFigureLabApp {
 
     clearLog() {
         this.runLog.innerHTML = '';
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 }
 

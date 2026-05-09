@@ -38,17 +38,6 @@ def _run_cli(args: list[str]) -> tuple[int, str, str]:
     return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
 
 
-def _read_yaml(path: Path) -> dict | None:
-    """Read a YAML file and return parsed content as dict, or None if missing."""
-    if not path.exists():
-        return None
-    try:
-        import yaml
-        return yaml.safe_load(path.read_text(encoding="utf-8"))
-    except ImportError:
-        return {"raw": path.read_text(encoding="utf-8")}
-
-
 def _read_text(path: Path) -> str | None:
     """Read a text file, or None if missing."""
     if not path.exists():
@@ -92,6 +81,18 @@ class APIHandler(SimpleHTTPRequestHandler):
         else:
             self._text_response("Frontend not found", 404)
 
+    def _serve_static_file(self, filename: str, content_type: str) -> None:
+        file_path = ROOT / "app" / "web-ui" / filename
+        if file_path.exists():
+            content = file_path.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", f"{content_type}; charset=utf-8")
+            self._set_cors()
+            self.end_headers()
+            self.wfile.write(content)
+        else:
+            self._text_response(f"{filename} not found", 404)
+
     def do_OPTIONS(self) -> None:
         self.send_response(204)
         self._set_cors()
@@ -101,7 +102,13 @@ class APIHandler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
 
-        if path == "/api/project":
+        if path == "/" or path == "/index.html":
+            self._serve_frontend()
+        elif path == "/styles.css":
+            self._serve_static_file("styles.css", "text/css")
+        elif path == "/app.js":
+            self._serve_static_file("app.js", "application/javascript")
+        elif path == "/api/project":
             self._handle_get_project()
         elif path == "/api/spec":
             self._handle_get_spec()
@@ -112,7 +119,7 @@ class APIHandler(SimpleHTTPRequestHandler):
         elif path.startswith("/outputs/"):
             self._handle_static_output(path)
         else:
-            self._serve_frontend()
+            self._text_response("Not found", 404)
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
@@ -139,7 +146,7 @@ class APIHandler(SimpleHTTPRequestHandler):
 
     def _handle_get_spec(self) -> None:
         spec_path = _get_project_root() / "spec" / "figure.yaml"
-        content = _read_yaml(spec_path)
+        content = _read_text(spec_path)
         if content is None:
             self._json_response({"error": "figure.yaml not found"}, 404)
         else:
@@ -147,7 +154,7 @@ class APIHandler(SimpleHTTPRequestHandler):
 
     def _handle_get_data_manifest(self) -> None:
         manifest_path = _get_project_root() / "spec" / "data_manifest.yaml"
-        content = _read_yaml(manifest_path)
+        content = _read_text(manifest_path)
         if content is None:
             self._json_response({"error": "data_manifest.yaml not found"}, 404)
         else:
