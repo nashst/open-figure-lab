@@ -9,6 +9,13 @@ class OpenFigureLabApp {
         this.selectedAgentId = null;
         this.selectedModel = "default";
         this.selectedReasoning = "default";
+        // Agent run polling state
+        this.activeRunId = null;
+        this.lastEventId = 0;
+        this.pollTimer = null;
+        this.pollRetries = 0;
+        this.MAX_POLL_RETRIES = 3;
+        this.POLL_INTERVAL_MS = 1000;
     }
 
     init() {
@@ -49,6 +56,7 @@ class OpenFigureLabApp {
         this.tabs = document.querySelectorAll(".tab");
         this.commandInput = document.getElementById("commandInput");
         this.btnSendPrompt = document.getElementById("btnSendPrompt");
+        this.btnCancelRun = document.getElementById("btnCancelRun");
         this.agentThread = document.querySelector(".agent-thread");
     }
 
@@ -86,6 +94,7 @@ class OpenFigureLabApp {
             this.btnSendPrompt.disabled = !this.commandInput.value.trim();
         });
         this.btnSendPrompt.addEventListener("click", () => this.sendAgentPrompt());
+        this.btnCancelRun.addEventListener("click", () => this.cancelAgentRun());
         this.commandInput.addEventListener("keydown", (e) => {
             if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -433,20 +442,16 @@ class OpenFigureLabApp {
 
     async sendAgentPrompt() {
         const prompt = this.commandInput.value.trim();
-        if (!prompt || this.isSendingPrompt) {
+        if (!prompt || this.activeRunId) {
             return;
         }
 
-        this.isSendingPrompt = true;
-        this.btnSendPrompt.disabled = true;
-        this.commandInput.disabled = true;
-
-        // Show user message in Agent Console
+        this.setAgentUIState(true);
         this.appendAgentMessage(prompt, "user");
         this.commandInput.value = "";
 
         try {
-            this.setStatus("running", "Running agent");
+            this.setStatus("running", "Starting agent");
             const res = await fetch(`${this.apiBase}/api/agent-runs`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -461,38 +466,236 @@ class OpenFigureLabApp {
             const data = await res.json();
 
             if (!res.ok) {
-                // HTTP-level error (validation, not-implemented, etc.)
                 this.appendAgentMessage(`Error: ${data.error || "Request failed"}`, "system");
                 this.addLogEntry(`Agent run rejected: ${data.error || res.status}`, "error");
                 this.setStatus("error", "Failed");
-            } else if (data.status === "completed") {
-                // Run succeeded
-                this.addLogEntry(`Run ${data.id} completed (exit ${data.returncode})`, "success");
-                const output = this.truncateOutput(data.stdout || "(no output)", 3000);
-                this.appendAgentMessage(output, "system");
-                this.setStatus("ready", "Ready");
-                await this.refreshAfterAgentRun();
-            } else if (data.status === "failed") {
-                // Run failed
-                this.addLogEntry(`Run ${data.id} failed (exit ${data.returncode})`, "error");
-                const output = this.truncateOutput(data.stderr || data.stdout || "(no output)", 3000);
-                this.appendAgentMessage(output, "system");
-                this.setStatus("error", "Failed");
-                await this.refreshAfterAgentRun();
-            } else {
-                // Shouldn't happen (pending/running from sync call), but handle gracefully
-                this.addLogEntry(`Run ${data.id} — ${data.status}`, "command");
-                this.appendAgentMessage(`Run ${data.id} — ${data.status}`, "system");
-                this.setStatus("ready", "Ready");
+                this.setAgentUIState(false);
+                return;
             }
+
+            this.activeRunId = data.id;
+            this.lastEventId = 0;
+            this.pollRetries = 0;
+            this.addLogEntry(`Run ${data.id} created — ${data.status}`, "command");
+            this.setStatus("running", `Agent running (${data.id})`);
+
+            // Start polling
+            this.pollEvents();
         } catch (err) {
             this.appendAgentMessage(`Error: ${err.message}`, "system");
             this.addLogEntry(`Agent run error: ${err.message}`, "error");
             this.setStatus("error", "Failed");
-        } finally {
-            this.isSendingPrompt = false;
-            this.commandInput.disabled = false;
-            this.btnSendPrompt.disabled = !this.commandInput.value.trim();
+            this.setAgentUIState(false);
+        }
+    }
+
+    async pollEvents() {
+        if (!this.activeRunId) {
+            return;
+        }
+
+        try {
+            const url = `${this.apiBase}/api/agent-runs/${this.activeRunId}/events?after=${this.lastEventId}`;
+            const res = await fetch(url);
+
+            if (!res.ok) {
+                this.pollRetries++;
+                if (this.pollRetries >= this.MAX_POLL_RETRIES) {
+                    this.addLogEntry(`Poll failed ${this.pollRetries} times — stopping`, "error");
+                    this.appendAgentMessage("Error: lost connection to agent run", "system");
+                    this.stopPolling("error");
+                    return;
+                }
+                // Retry after interval
+                this.pollTimer = setTimeout(() => this.pollEvents(), this.POLL_INTERVAL_MS);
+                return;
+            }
+
+            // Reset retry counter on success
+            this.pollRetries = 0;
+
+            const text = await res.text();
+            const events = this.parseSSE(text);
+
+            for (const evt of events) {
+                this.lastEventId = Math.max(this.lastEventId, evt.id);
+                this.handleAgentEvent(evt);
+            }
+        } catch (err) {
+            this.pollRetries++;
+            if (this.pollRetries >= this.MAX_POLL_RETRIES) {
+                this.addLogEntry(`Poll error ${this.pollRetries} times — stopping: ${err.message}`, "error");
+                this.appendAgentMessage(`Error: ${err.message}`, "system");
+                this.stopPolling("error");
+                return;
+            }
+        }
+
+        // Schedule next poll if still active
+        if (this.activeRunId) {
+            this.pollTimer = setTimeout(() => this.pollEvents(), this.POLL_INTERVAL_MS);
+        }
+    }
+
+    parseSSE(text) {
+        const events = [];
+        let currentId = 0;
+        let currentType = "message";
+        let currentData = "";
+
+        for (const line of text.split("\n")) {
+            if (line.startsWith("id: ")) {
+                currentId = parseInt(line.slice(4), 10) || 0;
+            } else if (line.startsWith("event: ")) {
+                currentType = line.slice(7);
+            } else if (line.startsWith("data: ")) {
+                currentData = line.slice(6);
+            } else if (line === "") {
+                // End of event block
+                if (currentData) {
+                    let parsed = null;
+                    try {
+                        parsed = JSON.parse(currentData);
+                    } catch {
+                        // Not JSON, use raw
+                    }
+                    events.push({
+                        id: currentId,
+                        type: currentType,
+                        data: parsed,
+                        detail: parsed ? parsed.detail : currentData,
+                    });
+                }
+                currentId = 0;
+                currentType = "message";
+                currentData = "";
+            }
+        }
+
+        // Handle trailing event without final blank line
+        if (currentData) {
+            let parsed = null;
+            try {
+                parsed = JSON.parse(currentData);
+            } catch {
+                // Not JSON
+            }
+            events.push({
+                id: currentId,
+                type: currentType,
+                data: parsed,
+                detail: parsed ? parsed.detail : currentData,
+            });
+        }
+
+        return events;
+    }
+
+    handleAgentEvent(evt) {
+        const detail = evt.detail || "";
+
+        switch (evt.type) {
+            case "created":
+                // Already logged on POST response
+                break;
+
+            case "running":
+                this.addLogEntry(`Run started`, "command");
+                this.setStatus("running", `Agent running (${this.activeRunId})`);
+                break;
+
+            case "stdout":
+                if (detail) {
+                    this.appendAgentMessage(detail, "system");
+                }
+                break;
+
+            case "stderr":
+                if (detail) {
+                    this.appendAgentMessage(detail, "system");
+                }
+                break;
+
+            case "completed":
+                this.addLogEntry(`Run ${this.activeRunId} completed (exit 0)`, "success");
+                this.setStatus("ready", "Ready");
+                this.stopPolling("completed");
+                this.refreshAfterAgentRun();
+                break;
+
+            case "failed":
+                this.addLogEntry(`Run ${this.activeRunId} failed${detail ? ` — ${detail}` : ""}`, "error");
+                this.setStatus("error", "Failed");
+                this.stopPolling("failed");
+                this.refreshAfterAgentRun();
+                break;
+
+            case "cancelled":
+                this.addLogEntry(`Run ${this.activeRunId} cancelled`, "command");
+                this.setStatus("ready", "Cancelled");
+                this.stopPolling("cancelled");
+                this.refreshAfterAgentRun();
+                break;
+
+            default:
+                // Unknown event type, log it
+                if (detail) {
+                    this.addLogEntry(`[${evt.type}] ${detail}`, "output");
+                }
+                break;
+        }
+    }
+
+    stopPolling(reason) {
+        if (this.pollTimer) {
+            clearTimeout(this.pollTimer);
+            this.pollTimer = null;
+        }
+        // Store runId before clearing for fileChanges fetch
+        this._lastCompletedRunId = this.activeRunId;
+        this.activeRunId = null;
+        this.lastEventId = 0;
+        this.pollRetries = 0;
+        this.setAgentUIState(false);
+    }
+
+    async cancelAgentRun() {
+        if (!this.activeRunId) {
+            return;
+        }
+
+        const runId = this.activeRunId;
+        this.btnCancelRun.disabled = true;
+
+        try {
+            const res = await fetch(`${this.apiBase}/api/agent-runs/${runId}/cancel`, {
+                method: "POST",
+            });
+            const data = await res.json();
+
+            if (!res.ok) {
+                this.addLogEntry(`Cancel failed: ${data.error || res.status}`, "error");
+                this.btnCancelRun.disabled = false;
+                return;
+            }
+
+            this.addLogEntry(`Cancel requested for ${runId}`, "command");
+            // Polling will pick up the cancelled event
+        } catch (err) {
+            this.addLogEntry(`Cancel error: ${err.message}`, "error");
+            this.btnCancelRun.disabled = false;
+        }
+    }
+
+    setAgentUIState(running) {
+        this.btnSendPrompt.disabled = running;
+        this.commandInput.disabled = running;
+        if (running) {
+            this.btnCancelRun.classList.remove("hidden");
+            this.btnCancelRun.disabled = false;
+        } else {
+            this.btnCancelRun.classList.add("hidden");
+            this.btnCancelRun.disabled = true;
             this.commandInput.focus();
         }
     }
@@ -505,6 +708,21 @@ class OpenFigureLabApp {
     }
 
     async refreshAfterAgentRun() {
+        // Fetch full run record for fileChanges
+        if (this.activeRunId || this._lastCompletedRunId) {
+            const runId = this.activeRunId || this._lastCompletedRunId;
+            try {
+                const res = await fetch(`${this.apiBase}/api/agent-runs/${runId}`);
+                if (res.ok) {
+                    const run = await res.json();
+                    this.displayFileChanges(run);
+                }
+            } catch (err) {
+                console.error("Failed to fetch run record:", err);
+            }
+            this._lastCompletedRunId = null;
+        }
+
         await Promise.all([
             this.fetchSpec(),
             this.fetchDataManifest(),
@@ -514,10 +732,66 @@ class OpenFigureLabApp {
     }
 
     appendAgentMessage(text, role) {
+        // Check if last message is same role — append to it for streaming effect
+        const last = this.agentThread.lastElementChild;
+        if (last && last.classList.contains(role) && role === "system") {
+            last.textContent += "\n" + text;
+            this.agentThread.scrollTop = this.agentThread.scrollHeight;
+            return;
+        }
+
         const msg = document.createElement("div");
         msg.className = `agent-message ${role}`;
         msg.textContent = text;
         this.agentThread.appendChild(msg);
+        this.agentThread.scrollTop = this.agentThread.scrollHeight;
+    }
+
+    displayFileChanges(run) {
+        const changes = run.fileChanges || [];
+        const count = changes.length;
+
+        // Run Log: count summary
+        if (count > 0) {
+            this.addLogEntry(`${count} file${count === 1 ? "" : "s"} changed`, "success");
+        } else {
+            this.addLogEntry("No project files changed", "output");
+        }
+
+        // Agent Console: detailed file list
+        const container = document.createElement("div");
+        container.className = "file-changes";
+
+        const header = document.createElement("div");
+        header.className = "file-changes-header";
+        header.textContent = count > 0
+            ? `Changed files (${count})`
+            : "No project files changed";
+        container.appendChild(header);
+
+        if (count > 0) {
+            const list = document.createElement("div");
+            list.className = "file-changes-list";
+            for (const change of changes) {
+                const item = document.createElement("div");
+                item.className = "file-change-item";
+
+                const badge = document.createElement("span");
+                badge.className = `file-badge file-badge-${change.status}`;
+                badge.textContent = change.status;
+
+                const path = document.createElement("span");
+                path.className = "file-path";
+                path.textContent = change.path;
+
+                item.appendChild(badge);
+                item.appendChild(path);
+                list.appendChild(item);
+            }
+            container.appendChild(list);
+        }
+
+        this.agentThread.appendChild(container);
         this.agentThread.scrollTop = this.agentThread.scrollHeight;
     }
 

@@ -715,6 +715,70 @@ h2 {
     background: var(--primary-soft);
 }
 
+.file-changes {
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-lg);
+    padding: 10px;
+    font-size: 12px;
+}
+
+.file-changes-header {
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+
+.file-changes-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.file-change-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.file-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+}
+
+.file-badge-added {
+    background: var(--green-soft);
+    color: var(--green);
+    border: 1px solid color-mix(in srgb, var(--green) 30%, var(--border));
+}
+
+.file-badge-modified {
+    background: var(--warning-soft);
+    color: var(--warning);
+    border: 1px solid color-mix(in srgb, var(--warning) 30%, var(--border));
+}
+
+.file-badge-deleted {
+    background: var(--error-soft);
+    color: var(--error);
+    border: 1px solid color-mix(in srgb, var(--error) 30%, var(--border));
+}
+
+.file-path {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .command-box {
     padding: 12px;
     border-top: 1px solid var(--border-soft);
@@ -750,6 +814,19 @@ h2 {
 .send-button {
     height: 36px;
     flex-shrink: 0;
+}
+
+.cancel-button {
+    height: 36px;
+    flex-shrink: 0;
+    border-color: var(--error);
+    color: var(--error);
+}
+
+.cancel-button:hover {
+    background: var(--error-soft);
+    border-color: var(--error);
+    color: var(--error);
 }
 
 .run-log-panel {

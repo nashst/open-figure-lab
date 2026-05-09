@@ -217,3 +217,27 @@ Open:
 
 - Real OpenCode execution is synchronous and blocks the request until completion or timeout.
 - No SSE/event streaming, incremental tool output, or process cancellation yet.
+
+## 2026-05-09 OpenCode - Async Agent Runs, SSE, and File Changes
+
+Changed:
+
+- Replaced synchronous agent execution with a background run controller using `subprocess.Popen`.
+- Added short-connection SSE endpoint `GET /api/agent-runs/<id>/events?after=<event_id>`.
+- Added process cancellation for pending/running runs.
+- Added adapter argv builders for OpenCode, Claude Code, and Codex.
+- Added prompt-via-stdin support for Claude Code and Codex.
+- Added per-run stdout/stderr events and file change detection after run completion.
+- Updated the Agent Console to poll run events, show stdout/stderr, expose Cancel, and display changed files.
+
+Verified:
+
+- `python -m py_compile app\api\server.py app\start.py`
+- `node --check app\web-ui\app.js`
+- `PYTHONPATH=src python -m unittest discover -s tests -p 'test*.py' -v`
+- HTTP smoke test for `/api/agents`, `/api/agent-runs/nope/events` 404, empty prompt rejection, unsupported agent rejection, and POST `/api/validate`.
+
+Open:
+
+- SSE is still polling-style short connection, not a held streaming connection.
+- Real long-running OpenCode/Claude/Codex edits were not manually exercised in-browser in this pass; subprocess behavior is covered by mocked tests.

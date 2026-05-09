@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -178,64 +180,352 @@ _OPENCODE_BOUNDARY = (
     "- When done, list every file you changed.\n"
 )
 
+SUPPORTED_AGENT_IDS = {"opencode", "claude", "codex"}
 
-def _is_valid_opencode_model(model: str) -> bool:
-    """Check whether model is 'default' or one returned by the OpenCode adapter."""
+
+def _build_agent_cmd(agent_id: str, model: str, reasoning: str, cwd: Path) -> tuple[list[str], bool]:
+    """Build argv and return (cmd, promptViaStdin)."""
+    if agent_id == "opencode":
+        cmd = ["opencode", "run", "--dangerously-skip-permissions"]
+        if model != "default":
+            cmd += ["--model", model]
+        return cmd, False
+
+    if agent_id == "claude":
+        cmd = [
+            "claude", "-p", "--output-format", "stream-json", "--verbose",
+            "--permission-mode", "bypassPermissions",
+        ]
+        if model != "default":
+            cmd += ["--model", model]
+        return cmd, True
+
+    if agent_id == "codex":
+        cmd = [
+            "codex", "exec", "--json", "--skip-git-repo-check",
+            "--sandbox", "workspace-write",
+            "-c", "sandbox_workspace_write.network_access=true",
+            "-C", str(cwd),
+        ]
+        if model != "default":
+            cmd += ["--model", model]
+        if reasoning != "default":
+            cmd += ["-c", f"model_reasoning_effort={reasoning}"]
+        return cmd, True
+
+    raise ValueError(f"Unknown agent: {agent_id}")
+
+
+# --- File snapshot and change detection ---
+
+_IGNORED_DIR_NAMES = {"__pycache__", ".git", "history"}
+_IGNORED_FILE_NAMES = {".DS_Store", "Thumbs.db"}
+
+
+def _should_ignore(relpath: str) -> bool:
+    """Return True if this relative path should be excluded from snapshots."""
+    parts = relpath.replace("\\", "/").split("/")
+    # Ignore directories by name
+    for part in parts[:-1]:
+        if part in _IGNORED_DIR_NAMES:
+            return True
+    # Ignore specific files
+    if parts[-1] in _IGNORED_FILE_NAMES:
+        return True
+    # Ignore outputs/*.tmp
+    if len(parts) >= 2 and parts[0] == "outputs" and parts[-1].endswith(".tmp"):
+        return True
+    return False
+
+
+def _file_fingerprint(path: Path) -> tuple[int, int, str]:
+    """Return (size, mtime_ns, sha256_hex_prefix) for a file."""
+    stat = path.stat()
+    size = stat.st_size
+    mtime_ns = stat.st_mtime_ns
+    # SHA-256 of first 1MB
+    h = hashlib.sha256()
+    remaining = 1024 * 1024
+    with open(path, "rb") as f:
+        while remaining > 0:
+            chunk = f.read(min(8192, remaining))
+            if not chunk:
+                break
+            h.update(chunk)
+            remaining -= len(chunk)
+    return size, mtime_ns, h.hexdigest()[:16]
+
+
+def _snapshot_project(project_dir: Path) -> dict[str, tuple[int, int, str]]:
+    """Scan project_dir and return {relpath: (size, mtime_ns, sha256_prefix)}."""
+    snapshot: dict[str, tuple[int, int, str]] = {}
+    if not project_dir.is_dir():
+        return snapshot
+    for fpath in project_dir.rglob("*"):
+        if not fpath.is_file():
+            continue
+        relpath = str(fpath.relative_to(project_dir)).replace("\\", "/")
+        if _should_ignore(relpath):
+            continue
+        try:
+            snapshot[relpath] = _file_fingerprint(fpath)
+        except OSError:
+            continue  # file may vanish during scan
+    return snapshot
+
+
+def _compute_file_changes(
+    before: dict[str, tuple[int, int, str]],
+    after: dict[str, tuple[int, int, str]],
+) -> list[dict[str, str]]:
+    """Compare two snapshots and return a list of {path, status} dicts."""
+    changes: list[dict[str, str]] = []
+    before_keys = set(before.keys())
+    after_keys = set(after.keys())
+
+    for path in sorted(after_keys - before_keys):
+        changes.append({"path": path, "status": "added"})
+
+    for path in sorted(before_keys - after_keys):
+        changes.append({"path": path, "status": "deleted"})
+
+    for path in sorted(before_keys & after_keys):
+        if before[path] != after[path]:
+            changes.append({"path": path, "status": "modified"})
+
+    return changes
+
+# Registry of currently-running Popen objects keyed by run_id.
+_RUN_PROCESSES: dict[str, subprocess.Popen] = {}
+_RUN_PROCESSES_LOCK = threading.Lock()
+
+# Global counter for sequential event IDs (per run, but monotonic is fine).
+_EVENT_ID_COUNTER = 0
+_EVENT_ID_LOCK = threading.Lock()
+
+
+def _next_event_id() -> int:
+    """Return a monotonically increasing event ID."""
+    global _EVENT_ID_COUNTER
+    with _EVENT_ID_LOCK:
+        _EVENT_ID_COUNTER += 1
+        return _EVENT_ID_COUNTER
+
+
+def _is_valid_agent_model(agent_id: str, model: str) -> bool:
+    """Check whether model is 'default' or one returned by the given agent's adapter."""
     if model == "default":
         return True
     if not model or any(c in model for c in "\x00\x0a\x0d"):
         return False
 
     agents = _cached_agents()
-    opencode = next((agent for agent in agents if agent.get("id") == "opencode"), None)
-    if not opencode:
+    agent = next((a for a in agents if a.get("id") == agent_id), None)
+    if not agent:
         return False
-    return any(item.get("id") == model for item in opencode.get("models", []))
+    return any(item.get("id") == model for item in agent.get("models", []))
 
 
-def _run_opencode(project_dir: Path, model: str, prompt: str, run: dict) -> None:
-    """Execute opencode synchronously and update the run record in-place."""
-    cmd: list[str] = ["opencode", "run", "--dangerously-skip-permissions"]
-    if model != "default":
-        cmd += ["--model", model]
-    cmd.append(prompt)
-
-    run["status"] = "running"
-    run["command"] = cmd
-    run["startedAt"] = datetime.now(timezone.utc).isoformat()
-    run["events"].append({"ts": run["startedAt"], "type": "running", "detail": "Agent started"})
-    _save_run(run)
+def _run_agent_background(run_id: str, project_dir: Path, agent_id: str,
+                          model: str, reasoning: str, full_prompt: str) -> None:
+    """Execute an agent in a background thread using Popen, streaming stdout/stderr into run events."""
+    # --- Take snapshot before run ---
+    snapshot_before = _snapshot_project(project_dir)
 
     try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            cwd=str(project_dir),
-            timeout=OPENCODE_RUN_TIMEOUT,
-        )
-        run["returncode"] = proc.returncode
-        run["stdout"] = proc.stdout[-4000:] if proc.stdout else ""
-        run["stderr"] = proc.stderr[-4000:] if proc.stderr else ""
-        run["status"] = "completed" if proc.returncode == 0 else "failed"
-    except subprocess.TimeoutExpired:
-        run["returncode"] = -1
-        run["stdout"] = ""
-        run["stderr"] = f"Timed out after {OPENCODE_RUN_TIMEOUT}s"
-        run["status"] = "failed"
+        cmd, prompt_via_stdin = _build_agent_cmd(agent_id, model, reasoning, project_dir)
+        # For agents that take prompt in argv (not stdin), append it now
+        if not prompt_via_stdin:
+            cmd.append(full_prompt)
+    except ValueError as exc:
+        run = _load_run(run_id)
+        if run is not None:
+            run["status"] = "failed"
+            run["returncode"] = -1
+            run["stderr"] = str(exc)
+            run["completedAt"] = datetime.now(timezone.utc).isoformat()
+            _save_run(run)
+        return
+
+    run = _load_run(run_id)
+    if run is None:
+        return
+
+    # Mark as running
+    now = datetime.now(timezone.utc).isoformat()
+    run["status"] = "running"
+    run["command"] = cmd
+    run["adapter"] = {"id": agent_id, "command": cmd[0], "promptViaStdin": prompt_via_stdin}
+    run["startedAt"] = now
+    run["events"].append({"id": _next_event_id(), "ts": now, "type": "running", "detail": "Agent started"})
+    _save_run(run)
+
+    # Check if already cancelled before spawning
+    run = _load_run(run_id)
+    if run is not None and run["status"] == "cancelled":
+        return
+
+    stdout_lines: list[str] = []
+    stderr_lines: list[str] = []
+
+    def _finalize_run(status: str, returncode: int) -> None:
+        """Snapshot files, compute changes, and finalize the run record."""
+        snapshot_after = _snapshot_project(project_dir)
+        file_changes = _compute_file_changes(snapshot_before, snapshot_after)
+
+        run = _load_run(run_id)
+        if run is None:
+            return
+        run["returncode"] = returncode
+        run["stdout"] = "\n".join(stdout_lines)[-4000:]
+        run["stderr"] = "\n".join(stderr_lines)[-4000:]
+        run["status"] = status
+        run["completedAt"] = datetime.now(timezone.utc).isoformat()
+        run["fileChanges"] = file_changes
+        run["events"].append({
+            "id": _next_event_id(),
+            "ts": run["completedAt"],
+            "type": status,
+            "detail": f"exit={returncode}",
+        })
+        if file_changes:
+            summary = f"{len(file_changes)} file(s) changed"
+            run["events"].append({
+                "id": _next_event_id(),
+                "ts": run["completedAt"],
+                "type": "file_changes",
+                "detail": json.dumps(file_changes),
+            })
+        _save_run(run)
+
+    try:
+        # On Windows, CREATE_NEW_PROCESS_GROUP allows us to send CTRL_BREAK later.
+        popen_kwargs: dict = {
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
+            "text": True,
+            "cwd": str(project_dir),
+        }
+        if prompt_via_stdin:
+            popen_kwargs["stdin"] = subprocess.PIPE
+        if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
+            popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+
+        proc = subprocess.Popen(cmd, **popen_kwargs)
+
+        # If prompt goes via stdin, write and close immediately
+        if prompt_via_stdin and proc.stdin:
+            try:
+                proc.stdin.write(full_prompt)
+                proc.stdin.close()
+            except OSError:
+                pass  # process may have exited
+
+        with _RUN_PROCESSES_LOCK:
+            _RUN_PROCESSES[run_id] = proc
+
+        # Read stdout and stderr line by line (interleaved via threads).
+        def _read_stream(stream, lines, evt_type):
+            for line in stream:
+                line = line.rstrip("\n\r")
+                if not line:
+                    continue
+                lines.append(line)
+                run = _load_run(run_id)
+                if run is None:
+                    return
+                # Re-check cancellation
+                if run["status"] == "cancelled":
+                    return
+                ts = datetime.now(timezone.utc).isoformat()
+                run["events"].append({
+                    "id": _next_event_id(),
+                    "ts": ts,
+                    "type": evt_type,
+                    "detail": line[-2000:],  # truncate very long lines
+                })
+                # Keep only last 4000 chars in aggregate fields
+                run["stdout"] = "\n".join(stdout_lines)[-4000:]
+                run["stderr"] = "\n".join(stderr_lines)[-4000:]
+                _save_run(run)
+
+        t_out = threading.Thread(target=_read_stream, args=(proc.stdout, stdout_lines, "stdout"), daemon=True)
+        t_err = threading.Thread(target=_read_stream, args=(proc.stderr, stderr_lines, "stderr"), daemon=True)
+        t_out.start()
+        t_err.start()
+
+        proc.wait()
+        t_out.join(timeout=5)
+        t_err.join(timeout=5)
+
+        returncode = proc.returncode
+
+        # Clean up process registry
+        with _RUN_PROCESSES_LOCK:
+            _RUN_PROCESSES.pop(run_id, None)
+
+        # Reload after threads finished
+        run = _load_run(run_id)
+        if run is None:
+            return
+
+        # If cancelled while running, don't overwrite status but still record file changes
+        if run["status"] == "cancelled":
+            snapshot_after = _snapshot_project(project_dir)
+            file_changes = _compute_file_changes(snapshot_before, snapshot_after)
+            run["fileChanges"] = file_changes
+            run["completedAt"] = datetime.now(timezone.utc).isoformat()
+            if file_changes:
+                run["events"].append({
+                    "id": _next_event_id(),
+                    "ts": run["completedAt"],
+                    "type": "file_changes",
+                    "detail": json.dumps(file_changes),
+                })
+            _save_run(run)
+            return
+
+        final_status = "completed" if returncode == 0 else "failed"
+        _finalize_run(final_status, returncode)
+
     except Exception as exc:
+        with _RUN_PROCESSES_LOCK:
+            _RUN_PROCESSES.pop(run_id, None)
+
+        run = _load_run(run_id)
+        if run is None:
+            return
+        if run["status"] == "cancelled":
+            snapshot_after = _snapshot_project(project_dir)
+            file_changes = _compute_file_changes(snapshot_before, snapshot_after)
+            run["fileChanges"] = file_changes
+            run["completedAt"] = datetime.now(timezone.utc).isoformat()
+            _save_run(run)
+            return
+
+        # Still record file changes even on exception
+        snapshot_after = _snapshot_project(project_dir)
+        file_changes = _compute_file_changes(snapshot_before, snapshot_after)
         run["returncode"] = -1
-        run["stdout"] = ""
+        run["stdout"] = "\n".join(stdout_lines)[-4000:]
         run["stderr"] = str(exc)
         run["status"] = "failed"
-
-    run["completedAt"] = datetime.now(timezone.utc).isoformat()
-    run["events"].append({
-        "ts": run["completedAt"],
-        "type": run["status"],
-        "detail": f"exit={run['returncode']}",
-    })
-    _save_run(run)
+        run["completedAt"] = datetime.now(timezone.utc).isoformat()
+        run["fileChanges"] = file_changes
+        run["events"].append({
+            "id": _next_event_id(),
+            "ts": run["completedAt"],
+            "type": "failed",
+            "detail": str(exc),
+        })
+        if file_changes:
+            run["events"].append({
+                "id": _next_event_id(),
+                "ts": run["completedAt"],
+                "type": "file_changes",
+                "detail": json.dumps(file_changes),
+            })
+        _save_run(run)
 
 
 def _cli_env() -> dict[str, str]:
@@ -411,6 +701,8 @@ class APIHandler(SimpleHTTPRequestHandler):
             self._handle_get_qa_report()
         elif path.startswith("/outputs/"):
             self._handle_static_output(path)
+        elif path.startswith("/api/agent-runs/") and path.endswith("/events"):
+            self._handle_get_agent_run_events(path, parsed.query)
         elif path.startswith("/api/agent-runs/"):
             self._handle_get_agent_run(path)
         else:
@@ -487,7 +779,7 @@ class APIHandler(SimpleHTTPRequestHandler):
             return None, 400
 
     def _handle_post_agent_run(self) -> None:
-        """Create a new agent run record and, for opencode, execute it."""
+        """Create a new agent run record and start background execution."""
         data, err = self._read_json_body()
         if data is None:
             self._json_response({"error": "Invalid JSON"}, err)
@@ -495,8 +787,8 @@ class APIHandler(SimpleHTTPRequestHandler):
 
         # --- validate agentId ---
         agent_id = data.get("agentId", "")
-        if agent_id != "opencode":
-            self._json_response({"error": f"Agent '{agent_id}' not implemented; only 'opencode' is supported."}, 400)
+        if agent_id not in SUPPORTED_AGENT_IDS:
+            self._json_response({"error": f"Agent '{agent_id}' not supported. Choose from: {', '.join(sorted(SUPPORTED_AGENT_IDS))}"}, 400)
             return
 
         # --- validate project ---
@@ -507,8 +799,8 @@ class APIHandler(SimpleHTTPRequestHandler):
 
         # --- validate model ---
         model = data.get("model", "default")
-        if not _is_valid_opencode_model(model):
-            self._json_response({"error": f"Invalid model: {model!r}"}, 400)
+        if not _is_valid_agent_model(agent_id, model):
+            self._json_response({"error": f"Invalid model for {agent_id}: {model!r}"}, 400)
             return
 
         # --- validate prompt ---
@@ -519,6 +811,8 @@ class APIHandler(SimpleHTTPRequestHandler):
         if len(prompt) > MAX_PROMPT_LENGTH:
             self._json_response({"error": f"Prompt exceeds {MAX_PROMPT_LENGTH} character limit"}, 400)
             return
+
+        reasoning = data.get("reasoning", "default")
 
         # --- build full prompt with boundary ---
         full_prompt = _OPENCODE_BOUNDARY + "\n" + prompt
@@ -532,26 +826,33 @@ class APIHandler(SimpleHTTPRequestHandler):
             "status": "pending",
             "agentId": agent_id,
             "model": model,
-            "reasoning": data.get("reasoning", "default"),
+            "reasoning": reasoning,
             "project": project,
             "prompt": prompt,
             "createdAt": now,
             "command": [],
+            "adapter": {},
             "startedAt": None,
             "completedAt": None,
             "returncode": None,
             "stdout": "",
             "stderr": "",
+            "fileChanges": [],
             "events": [
-                {"ts": now, "type": "created", "detail": "Run record created"},
+                {"id": _next_event_id(), "ts": now, "type": "created", "detail": "Run record created"},
             ],
         }
         _save_run(run)
 
-        # --- execute opencode synchronously ---
-        _run_opencode(project_dir, model, full_prompt, run)
+        # --- launch background thread ---
+        thread = threading.Thread(
+            target=_run_agent_background,
+            args=(run_id, project_dir, agent_id, model, reasoning, full_prompt),
+            daemon=True,
+        )
+        thread.start()
 
-        self._json_response(run, 201)
+        self._json_response(run, 202)
 
     def _handle_get_agent_run(self, path: str) -> None:
         """Return a single agent run record by id."""
@@ -562,8 +863,48 @@ class APIHandler(SimpleHTTPRequestHandler):
             return
         self._json_response(run)
 
+    def _handle_get_agent_run_events(self, path: str, query: str) -> None:
+        """SSE endpoint: stream run events as text/event-stream."""
+        # path = /api/agent-runs/<id>/events
+        parts = path.split("/")
+        if len(parts) < 5:
+            self._text_response("Invalid path", 400)
+            return
+        run_id = parts[3]
+
+        # Parse ?after=<event_id>
+        after_id = 0
+        for param in query.split("&"):
+            if param.startswith("after="):
+                try:
+                    after_id = int(param.split("=", 1)[1])
+                except ValueError:
+                    pass
+
+        run = _load_run(run_id)
+        if run is None:
+            self._text_response("Run not found", 404)
+            return
+
+        # Filter events after the given ID
+        events = [e for e in run.get("events", []) if e.get("id", 0) > after_id]
+
+        # Build SSE response
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self._set_cors()
+        self.end_headers()
+
+        for evt in events:
+            data_str = json.dumps(evt)
+            frame = f"id: {evt.get('id', 0)}\nevent: {evt.get('type', 'message')}\ndata: {data_str}\n\n"
+            self.wfile.write(frame.encode("utf-8"))
+        self.wfile.flush()
+
     def _handle_cancel_agent_run(self, path: str) -> None:
-        """Cancel an agent run."""
+        """Cancel an agent run, terminating the process if still running."""
         # path = /api/agent-runs/<id>/cancel
         parts = path.split("/")
         # ['', 'api', 'agent-runs', '<id>', 'cancel']
@@ -576,13 +917,33 @@ class APIHandler(SimpleHTTPRequestHandler):
             self._json_response({"error": "Run not found"}, 404)
             return
 
-        if run["status"] in ("completed", "cancelled"):
+        if run["status"] in ("completed", "failed", "cancelled"):
             self._json_response({"error": f"Run already {run['status']}"}, 409)
             return
 
+        # Try to terminate the process if it's still running
+        with _RUN_PROCESSES_LOCK:
+            proc = _RUN_PROCESSES.get(run_id)
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=3)
+            except OSError:
+                pass  # process already exited
+
         now = datetime.now(timezone.utc).isoformat()
         run["status"] = "cancelled"
-        run["events"].append({"ts": now, "type": "cancelled", "detail": "Cancelled by user"})
+        run["completedAt"] = now
+        run["events"].append({
+            "id": _next_event_id(),
+            "ts": now,
+            "type": "cancelled",
+            "detail": "Cancelled by user",
+        })
         _save_run(run)
         self._json_response(run)
 
