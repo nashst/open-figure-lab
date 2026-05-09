@@ -195,3 +195,25 @@ Open:
 
 - Agent run records are still mock records; no real CLI process is spawned yet.
 - No SSE/event streaming yet.
+
+## 2026-05-09 OpenCode - Synchronous OpenCode Runs
+
+Changed:
+
+- Upgraded `/api/agent-runs` from mock records to synchronous OpenCode execution for `agentId=opencode`.
+- Added Open Figure Lab data-safety boundary text to every OpenCode prompt.
+- Persisted command, timestamps, return code, stdout, stderr, and completed/failed status in run records.
+- Limited prompt length, validated projects, rejected unsupported agents, and whitelisted OpenCode models from `/api/agents`.
+- Updated the Agent Console to display completed/failed output summaries and refresh spec/data/QA/preview after a run.
+
+Verified:
+
+- `python -m py_compile app\api\server.py app\start.py`
+- `node --check app\web-ui\app.js`
+- `PYTHONPATH=src python -m unittest discover -s tests -p 'test*.py' -v`
+- HTTP smoke test for `/api/projects`, `/api/session-config`, unsupported-agent rejection on `/api/agent-runs`, and POST `/api/validate`, `/api/render`, `/api/qa`.
+
+Open:
+
+- Real OpenCode execution is synchronous and blocks the request until completion or timeout.
+- No SSE/event streaming, incremental tool output, or process cancellation yet.

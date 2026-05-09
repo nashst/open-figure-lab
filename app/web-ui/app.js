@@ -446,6 +446,7 @@ class OpenFigureLabApp {
         this.commandInput.value = "";
 
         try {
+            this.setStatus("running", "Running agent");
             const res = await fetch(`${this.apiBase}/api/agent-runs`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -460,21 +461,56 @@ class OpenFigureLabApp {
             const data = await res.json();
 
             if (!res.ok) {
+                // HTTP-level error (validation, not-implemented, etc.)
                 this.appendAgentMessage(`Error: ${data.error || "Request failed"}`, "system");
-                this.addLogEntry(`Agent run failed: ${data.error || res.status}`, "error");
+                this.addLogEntry(`Agent run rejected: ${data.error || res.status}`, "error");
+                this.setStatus("error", "Failed");
+            } else if (data.status === "completed") {
+                // Run succeeded
+                this.addLogEntry(`Run ${data.id} completed (exit ${data.returncode})`, "success");
+                const output = this.truncateOutput(data.stdout || "(no output)", 3000);
+                this.appendAgentMessage(output, "system");
+                this.setStatus("ready", "Ready");
+                await this.refreshAfterAgentRun();
+            } else if (data.status === "failed") {
+                // Run failed
+                this.addLogEntry(`Run ${data.id} failed (exit ${data.returncode})`, "error");
+                const output = this.truncateOutput(data.stderr || data.stdout || "(no output)", 3000);
+                this.appendAgentMessage(output, "system");
+                this.setStatus("error", "Failed");
+                await this.refreshAfterAgentRun();
             } else {
-                this.addLogEntry(`Run created: ${data.id} (${data.status})`, "command");
+                // Shouldn't happen (pending/running from sync call), but handle gracefully
+                this.addLogEntry(`Run ${data.id} — ${data.status}`, "command");
                 this.appendAgentMessage(`Run ${data.id} — ${data.status}`, "system");
+                this.setStatus("ready", "Ready");
             }
         } catch (err) {
             this.appendAgentMessage(`Error: ${err.message}`, "system");
             this.addLogEntry(`Agent run error: ${err.message}`, "error");
+            this.setStatus("error", "Failed");
         } finally {
             this.isSendingPrompt = false;
             this.commandInput.disabled = false;
             this.btnSendPrompt.disabled = !this.commandInput.value.trim();
             this.commandInput.focus();
         }
+    }
+
+    truncateOutput(text, maxChars) {
+        if (text.length <= maxChars) {
+            return text;
+        }
+        return text.slice(0, maxChars) + "\n\n[truncated — output exceeds " + maxChars + " characters]";
+    }
+
+    async refreshAfterAgentRun() {
+        await Promise.all([
+            this.fetchSpec(),
+            this.fetchDataManifest(),
+            this.fetchQAReport(),
+        ]);
+        this.loadPreview();
     }
 
     appendAgentMessage(text, role) {

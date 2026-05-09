@@ -34,6 +34,7 @@ AGENT_DEFS = [
         "models_args": ["models"],
         "fallback_models": [
             DEFAULT_MODEL_OPTION,
+            {"id": "opencode/minimax-m2.5-free", "label": "opencode/minimax-m2.5-free"},
         ],
     },
     {
@@ -164,6 +165,77 @@ def _load_run(run_id: str) -> dict | None:
         return json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return None
+
+
+MAX_PROMPT_LENGTH = 8000
+OPENCODE_RUN_TIMEOUT = 180  # seconds
+
+_OPENCODE_BOUNDARY = (
+    "IMPORTANT BOUNDARIES — you must follow these rules:\n"
+    "- Do NOT fabricate or invent any scientific data, metrics, p-values, or results.\n"
+    "- Do NOT modify files under data/ unless the user explicitly asks.\n"
+    "- Prefer modifying spec/figure.yaml, src/render.py, and outputs/ artifacts.\n"
+    "- When done, list every file you changed.\n"
+)
+
+
+def _is_valid_opencode_model(model: str) -> bool:
+    """Check whether model is 'default' or one returned by the OpenCode adapter."""
+    if model == "default":
+        return True
+    if not model or any(c in model for c in "\x00\x0a\x0d"):
+        return False
+
+    agents = _cached_agents()
+    opencode = next((agent for agent in agents if agent.get("id") == "opencode"), None)
+    if not opencode:
+        return False
+    return any(item.get("id") == model for item in opencode.get("models", []))
+
+
+def _run_opencode(project_dir: Path, model: str, prompt: str, run: dict) -> None:
+    """Execute opencode synchronously and update the run record in-place."""
+    cmd: list[str] = ["opencode", "run", "--dangerously-skip-permissions"]
+    if model != "default":
+        cmd += ["--model", model]
+    cmd.append(prompt)
+
+    run["status"] = "running"
+    run["command"] = cmd
+    run["startedAt"] = datetime.now(timezone.utc).isoformat()
+    run["events"].append({"ts": run["startedAt"], "type": "running", "detail": "Agent started"})
+    _save_run(run)
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=str(project_dir),
+            timeout=OPENCODE_RUN_TIMEOUT,
+        )
+        run["returncode"] = proc.returncode
+        run["stdout"] = proc.stdout[-4000:] if proc.stdout else ""
+        run["stderr"] = proc.stderr[-4000:] if proc.stderr else ""
+        run["status"] = "completed" if proc.returncode == 0 else "failed"
+    except subprocess.TimeoutExpired:
+        run["returncode"] = -1
+        run["stdout"] = ""
+        run["stderr"] = f"Timed out after {OPENCODE_RUN_TIMEOUT}s"
+        run["status"] = "failed"
+    except Exception as exc:
+        run["returncode"] = -1
+        run["stdout"] = ""
+        run["stderr"] = str(exc)
+        run["status"] = "failed"
+
+    run["completedAt"] = datetime.now(timezone.utc).isoformat()
+    run["events"].append({
+        "ts": run["completedAt"],
+        "type": run["status"],
+        "detail": f"exit={run['returncode']}",
+    })
+    _save_run(run)
 
 
 def _cli_env() -> dict[str, str]:
@@ -415,33 +487,70 @@ class APIHandler(SimpleHTTPRequestHandler):
             return None, 400
 
     def _handle_post_agent_run(self) -> None:
-        """Create a new agent run record."""
+        """Create a new agent run record and, for opencode, execute it."""
         data, err = self._read_json_body()
         if data is None:
             self._json_response({"error": "Invalid JSON"}, err)
             return
 
+        # --- validate agentId ---
+        agent_id = data.get("agentId", "")
+        if agent_id != "opencode":
+            self._json_response({"error": f"Agent '{agent_id}' not implemented; only 'opencode' is supported."}, 400)
+            return
+
+        # --- validate project ---
         project = data.get("project", "")
         if not _is_valid_project(project):
             self._json_response({"error": f"Invalid project: {project!r}"}, 400)
             return
 
+        # --- validate model ---
+        model = data.get("model", "default")
+        if not _is_valid_opencode_model(model):
+            self._json_response({"error": f"Invalid model: {model!r}"}, 400)
+            return
+
+        # --- validate prompt ---
+        prompt = (data.get("prompt") or "").strip()
+        if not prompt:
+            self._json_response({"error": "Prompt must not be empty"}, 400)
+            return
+        if len(prompt) > MAX_PROMPT_LENGTH:
+            self._json_response({"error": f"Prompt exceeds {MAX_PROMPT_LENGTH} character limit"}, 400)
+            return
+
+        # --- build full prompt with boundary ---
+        full_prompt = _OPENCODE_BOUNDARY + "\n" + prompt
+
+        # --- create run record ---
         run_id = _generate_run_id()
         now = datetime.now(timezone.utc).isoformat()
-        run = {
+        project_dir = ROOT / "examples" / project
+        run: dict = {
             "id": run_id,
             "status": "pending",
-            "agentId": data.get("agentId", ""),
-            "model": data.get("model", "default"),
+            "agentId": agent_id,
+            "model": model,
             "reasoning": data.get("reasoning", "default"),
             "project": project,
-            "prompt": data.get("prompt", ""),
+            "prompt": prompt,
             "createdAt": now,
+            "command": [],
+            "startedAt": None,
+            "completedAt": None,
+            "returncode": None,
+            "stdout": "",
+            "stderr": "",
             "events": [
                 {"ts": now, "type": "created", "detail": "Run record created"},
             ],
         }
         _save_run(run)
+
+        # --- execute opencode synchronously ---
+        _run_opencode(project_dir, model, full_prompt, run)
+
         self._json_response(run, 201)
 
     def _handle_get_agent_run(self, path: str) -> None:
