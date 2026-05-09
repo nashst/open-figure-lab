@@ -24,9 +24,12 @@ sys.path.insert(0, str(ROOT / "app"))
 
 from api.server import (  # noqa: E402
     RUNS_DIR,
+    SKILL_REGISTRY,
     _build_agent_cmd,
+    _build_injected_prompt,
     _compute_file_changes,
     _generate_run_id,
+    _get_enabled_skills,
     _is_valid_agent_model,
     _is_valid_project,
     _load_run,
@@ -143,6 +146,89 @@ class RunHelpersTests(unittest.TestCase):
     def test_load_run_rejects_traversal(self) -> None:
         self.assertIsNone(_load_run("../etc/passwd"))
         self.assertIsNone(_load_run("foo/bar"))
+
+
+class SkillRegistryTests(unittest.TestCase):
+    """Unit tests for skill registry and prompt injection."""
+
+    def test_registry_has_required_skills(self) -> None:
+        """Registry must contain the three required builtin skills."""
+        self.assertIn("open-figure-lab-core", SKILL_REGISTRY)
+        self.assertIn("scientific-figure-qa", SKILL_REGISTRY)
+        self.assertIn("nature-style-figure", SKILL_REGISTRY)
+
+    def test_registry_skill_structure(self) -> None:
+        """Each skill must have required fields."""
+        required_fields = {"id", "title", "description", "promptText", "source", "enabled"}
+        for skill_id, skill in SKILL_REGISTRY.items():
+            with self.subTest(skill_id=skill_id):
+                self.assertTrue(required_fields.issubset(set(skill.keys())))
+
+    def test_registry_default_enabled_state(self) -> None:
+        """open-figure-lab-core and scientific-figure-qa should be enabled by default."""
+        self.assertTrue(SKILL_REGISTRY["open-figure-lab-core"]["enabled"])
+        self.assertTrue(SKILL_REGISTRY["scientific-figure-qa"]["enabled"])
+        self.assertFalse(SKILL_REGISTRY["nature-style-figure"]["enabled"])
+
+    def test_registry_source_is_builtin(self) -> None:
+        """All builtin skills should have source='builtin'."""
+        for skill in SKILL_REGISTRY.values():
+            self.assertEqual(skill["source"], "builtin")
+
+    def test_get_enabled_skills_defaults(self) -> None:
+        """When no skill_ids provided, return enabled defaults."""
+        skills = _get_enabled_skills(None)
+        skill_ids = {s["id"] for s in skills}
+        self.assertIn("open-figure-lab-core", skill_ids)
+        self.assertIn("scientific-figure-qa", skill_ids)
+        self.assertNotIn("nature-style-figure", skill_ids)
+
+    def test_get_enabled_skills_explicit_ids(self) -> None:
+        """When skill_ids provided, return exactly those skills."""
+        skills = _get_enabled_skills(["nature-style-figure"])
+        self.assertEqual(len(skills), 1)
+        self.assertEqual(skills[0]["id"], "nature-style-figure")
+
+    def test_get_enabled_skills_invalid_id_returns_empty(self) -> None:
+        """Invalid skill ID should return empty list."""
+        skills = _get_enabled_skills(["nonexistent-skill"])
+        self.assertEqual(skills, [])
+
+    def test_build_injected_prompt_contains_project(self) -> None:
+        """Injected prompt must contain project context."""
+        skills = _get_enabled_skills(None)
+        prompt = _build_injected_prompt("soc_proxy_fig2", "do something", skills)
+        self.assertIn("soc_proxy_fig2", prompt)
+        self.assertIn("figure.yaml", prompt)
+        self.assertIn("qa_report.md", prompt)
+
+    def test_build_injected_prompt_contains_skills(self) -> None:
+        """Injected prompt must contain skill prompt text."""
+        skills = _get_enabled_skills(None)
+        prompt = _build_injected_prompt("soc_proxy_fig2", "do something", skills)
+        self.assertIn("SAFETY RULES", prompt)
+        self.assertIn("SCIENTIFIC FIGURE QA", prompt)
+
+    def test_build_injected_prompt_contains_user_task(self) -> None:
+        """Injected prompt must contain the user's task."""
+        skills = _get_enabled_skills(None)
+        prompt = _build_injected_prompt("soc_proxy_fig2", "fix the axis labels", skills)
+        self.assertIn("fix the axis labels", prompt)
+
+    def test_build_injected_prompt_data_safety_boundary(self) -> None:
+        """Injected prompt must contain data safety rules."""
+        skills = _get_enabled_skills(None)
+        prompt = _build_injected_prompt("soc_proxy_fig2", "test", skills)
+        self.assertIn("Do NOT fabricate", prompt)
+        self.assertIn("p-values", prompt)
+        self.assertIn("reproducible", prompt)
+
+    def test_build_injected_prompt_with_empty_skills(self) -> None:
+        """Injected prompt should work with no skills."""
+        prompt = _build_injected_prompt("soc_proxy_fig2", "test task", [])
+        self.assertIn("soc_proxy_fig2", prompt)
+        self.assertIn("test task", prompt)
+        self.assertNotIn("SKILL:", prompt)
 
 
 class BuildAgentCmdTests(unittest.TestCase):
@@ -579,6 +665,89 @@ class AsyncAgentRunTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("not supported", data["error"].lower())
 
+    # ---- Skill-related tests ----
+
+    def test_get_skills_endpoint(self) -> None:
+        """GET /api/skills should return the skill registry."""
+        status, data = self._get_json("/api/skills")
+        self.assertEqual(status, 200)
+        self.assertIn("skills", data)
+        skills = data["skills"]
+        self.assertIsInstance(skills, list)
+        skill_ids = {s["id"] for s in skills}
+        self.assertIn("open-figure-lab-core", skill_ids)
+        self.assertIn("scientific-figure-qa", skill_ids)
+        self.assertIn("nature-style-figure", skill_ids)
+
+    def test_invalid_skill_id_rejected(self) -> None:
+        """POST /api/agent-runs with invalid skillId should return 400."""
+        status, data = self._post_json("/api/agent-runs", {
+            "agentId": "opencode",
+            "project": VALID_PROJECT,
+            "prompt": "test",
+            "skillIds": ["nonexistent-skill"],
+        })
+        self.assertEqual(status, 400)
+        self.assertIn("Invalid skill ID", data["error"])
+
+    def test_skill_ids_must_be_list(self) -> None:
+        """POST /api/agent-runs with non-list skillIds should return 400."""
+        status, data = self._post_json("/api/agent-runs", {
+            "agentId": "opencode",
+            "project": VALID_PROJECT,
+            "prompt": "test",
+            "skillIds": "not-a-list",
+        })
+        self.assertEqual(status, 400)
+        self.assertIn("list", data["error"].lower())
+
+    @patch("api.server.subprocess.Popen")
+    def test_run_record_contains_skill_ids(self, mock_popen: MagicMock) -> None:
+        """Run record should contain the skillIds used."""
+        mock_popen.return_value = _make_mock_popen(returncode=0)
+        _, created = self._post_json("/api/agent-runs", {
+            "agentId": "opencode",
+            "project": VALID_PROJECT,
+            "prompt": "test",
+            "skillIds": ["open-figure-lab-core"],
+        })
+        self.assertEqual(created["status"], "pending")
+        self.assertIn("skillIds", created)
+        self.assertEqual(created["skillIds"], ["open-figure-lab-core"])
+        self._cleanup_run(created["id"])
+
+    @patch("api.server.subprocess.Popen")
+    def test_run_record_default_skills_when_none_specified(self, mock_popen: MagicMock) -> None:
+        """Run record should use default enabled skills when skillIds not specified."""
+        mock_popen.return_value = _make_mock_popen(returncode=0)
+        _, created = self._post_json("/api/agent-runs", {
+            "agentId": "opencode",
+            "project": VALID_PROJECT,
+            "prompt": "test",
+        })
+        self.assertIn("skillIds", created)
+        skill_ids = set(created["skillIds"])
+        self.assertIn("open-figure-lab-core", skill_ids)
+        self.assertIn("scientific-figure-qa", skill_ids)
+        self.assertNotIn("nature-style-figure", skill_ids)
+        self._cleanup_run(created["id"])
+
+    @patch("api.server.subprocess.Popen")
+    def test_run_record_contains_injected_prompt_preview(self, mock_popen: MagicMock) -> None:
+        """Run record should contain injectedPromptPreview."""
+        mock_popen.return_value = _make_mock_popen(returncode=0)
+        _, created = self._post_json("/api/agent-runs", {
+            "agentId": "opencode",
+            "project": VALID_PROJECT,
+            "prompt": "fix the plot",
+        })
+        self.assertIn("injectedPromptPreview", created)
+        preview = created["injectedPromptPreview"]
+        self.assertIn("soc_proxy_fig2", preview)
+        self.assertIn("fix the plot", preview)
+        self.assertIn("SAFETY RULES", preview)
+        self._cleanup_run(created["id"])
+
     # ---- Async run tests (mock Popen) ----
 
     @patch("api.server.subprocess.Popen")
@@ -666,7 +835,9 @@ class AsyncAgentRunTests(unittest.TestCase):
         self._wait_for_status(created["id"])
         run = _load_run(created["id"])
         full_prompt = run["command"][-1]
-        self.assertIn("BOUNDARIES", full_prompt)
+        # New skill injection format: project context + skills + user task
+        self.assertIn("soc_proxy_fig2", full_prompt)
+        self.assertIn("SAFETY RULES", full_prompt)
         self.assertIn("my request", full_prompt)
         self._cleanup_run(created["id"])
 

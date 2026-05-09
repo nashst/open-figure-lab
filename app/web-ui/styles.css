@@ -715,6 +715,55 @@ h2 {
     background: var(--primary-soft);
 }
 
+.skills-section {
+    border-top: 1px solid var(--border-soft);
+    padding: 8px 12px;
+    background: var(--surface-low);
+}
+
+.skills-header {
+    margin-bottom: 6px;
+}
+
+.skills-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.skill-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius);
+    background: var(--surface);
+    cursor: pointer;
+    font-size: 11px;
+    transition: all 0.15s ease;
+}
+
+.skill-toggle:hover {
+    border-color: var(--primary);
+}
+
+.skill-toggle.active {
+    border-color: var(--primary);
+    background: var(--primary-soft);
+    color: var(--primary);
+}
+
+.skill-toggle input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+}
+
+.skill-toggle label {
+    cursor: pointer;
+    user-select: none;
+}
+
 .file-changes {
     border: 1px solid var(--border-soft);
     border-radius: var(--radius-lg);
@@ -777,6 +826,38 @@ h2 {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.skills-used {
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-lg);
+    padding: 10px;
+    font-size: 12px;
+    margin-top: 8px;
+}
+
+.skills-used-header {
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+
+.skills-used-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.skill-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    background: var(--primary-soft);
+    color: var(--primary);
+    border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border));
 }
 
 .command-box {

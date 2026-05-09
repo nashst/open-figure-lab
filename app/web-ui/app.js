@@ -9,6 +9,9 @@ class OpenFigureLabApp {
         this.selectedAgentId = null;
         this.selectedModel = "default";
         this.selectedReasoning = "default";
+        // Skills state
+        this.skills = [];
+        this.selectedSkillIds = new Set();
         // Agent run polling state
         this.activeRunId = null;
         this.lastEventId = 0;
@@ -58,6 +61,7 @@ class OpenFigureLabApp {
         this.btnSendPrompt = document.getElementById("btnSendPrompt");
         this.btnCancelRun = document.getElementById("btnCancelRun");
         this.agentThread = document.querySelector(".agent-thread");
+        this.skillsList = document.getElementById("skillsList");
     }
 
     bindEvents() {
@@ -139,6 +143,54 @@ class OpenFigureLabApp {
             console.error("Failed to load session/projects:", err);
         }
         this.scanAgents();
+        this.loadSkills();
+    }
+
+    async loadSkills() {
+        try {
+            const res = await fetch(`${this.apiBase}/api/skills`);
+            const data = await res.json();
+            this.skills = Array.isArray(data.skills) ? data.skills : [];
+            // Initialize selected skills from enabled defaults
+            this.selectedSkillIds = new Set(
+                this.skills.filter(s => s.enabled).map(s => s.id)
+            );
+            this.renderSkills();
+        } catch (err) {
+            console.error("Failed to load skills:", err);
+        }
+    }
+
+    renderSkills() {
+        if (!this.skillsList) return;
+        this.skillsList.innerHTML = "";
+        for (const skill of this.skills) {
+            const toggle = document.createElement("div");
+            toggle.className = `skill-toggle ${this.selectedSkillIds.has(skill.id) ? "active" : ""}`;
+
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.id = `skill-${skill.id}`;
+            checkbox.checked = this.selectedSkillIds.has(skill.id);
+            checkbox.addEventListener("change", () => {
+                if (checkbox.checked) {
+                    this.selectedSkillIds.add(skill.id);
+                    toggle.classList.add("active");
+                } else {
+                    this.selectedSkillIds.delete(skill.id);
+                    toggle.classList.remove("active");
+                }
+            });
+
+            const label = document.createElement("label");
+            label.htmlFor = `skill-${skill.id}`;
+            label.textContent = skill.title;
+            label.title = skill.description;
+
+            toggle.appendChild(checkbox);
+            toggle.appendChild(label);
+            this.skillsList.appendChild(toggle);
+        }
     }
 
     renderProjectPicker() {
@@ -452,6 +504,7 @@ class OpenFigureLabApp {
 
         try {
             this.setStatus("running", "Starting agent");
+            const skillIds = Array.from(this.selectedSkillIds);
             const res = await fetch(`${this.apiBase}/api/agent-runs`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -461,6 +514,7 @@ class OpenFigureLabApp {
                     reasoning: this.selectedReasoning,
                     project: this.projectName,
                     prompt: prompt,
+                    skillIds: skillIds,
                 }),
             });
             const data = await res.json();
@@ -708,7 +762,7 @@ class OpenFigureLabApp {
     }
 
     async refreshAfterAgentRun() {
-        // Fetch full run record for fileChanges
+        // Fetch full run record for fileChanges and skillIds
         if (this.activeRunId || this._lastCompletedRunId) {
             const runId = this.activeRunId || this._lastCompletedRunId;
             try {
@@ -716,6 +770,7 @@ class OpenFigureLabApp {
                 if (res.ok) {
                     const run = await res.json();
                     this.displayFileChanges(run);
+                    this.displayUsedSkills(run);
                 }
             } catch (err) {
                 console.error("Failed to fetch run record:", err);
@@ -790,6 +845,34 @@ class OpenFigureLabApp {
             }
             container.appendChild(list);
         }
+
+        this.agentThread.appendChild(container);
+        this.agentThread.scrollTop = this.agentThread.scrollHeight;
+    }
+
+    displayUsedSkills(run) {
+        const skillIds = run.skillIds || [];
+        if (skillIds.length === 0) return;
+
+        const container = document.createElement("div");
+        container.className = "skills-used";
+
+        const header = document.createElement("div");
+        header.className = "skills-used-header";
+        header.textContent = `Skills used (${skillIds.length}):`;
+        container.appendChild(header);
+
+        const list = document.createElement("div");
+        list.className = "skills-used-list";
+        for (const skillId of skillIds) {
+            const skill = this.skills.find(s => s.id === skillId);
+            const badge = document.createElement("span");
+            badge.className = "skill-badge";
+            badge.textContent = skill ? skill.title : skillId;
+            badge.title = skill ? skill.description : "";
+            list.appendChild(badge);
+        }
+        container.appendChild(list);
 
         this.agentThread.appendChild(container);
         this.agentThread.scrollTop = this.agentThread.scrollHeight;

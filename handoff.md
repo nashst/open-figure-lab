@@ -241,3 +241,44 @@ Open:
 
 - SSE is still polling-style short connection, not a held streaming connection.
 - Real long-running OpenCode/Claude/Codex edits were not manually exercised in-browser in this pass; subprocess behavior is covered by mocked tests.
+
+## 2026-05-09 Codex - Skill Injection and Skill Registry MVP
+
+Changed:
+
+- Added a lightweight skill registry (`SKILL_REGISTRY`) in `app/api/server.py` with three builtin skills:
+  - `open-figure-lab-core`: Core scientific figure production rules and data safety boundaries (enabled by default)
+  - `scientific-figure-qa`: QA constraints for axes, legends, statistical annotations, journal compliance (enabled by default)
+  - `nature-style-figure`: Nature journal formatting requirements (disabled by default, opt-in)
+- Each skill contains: `id`, `title`, `description`, `promptText`, `source` (builtin/local/github), `enabled` (default state).
+- Replaced the old `_OPENCODE_BOUNDARY` static string with `_build_injected_prompt()` that dynamically composes:
+  - Project context (name, directory, key file paths)
+  - Skill prompt text from selected skills
+  - Data safety boundary rules (fabrication prohibition, reproducibility, file change listing)
+  - User's task prompt
+- Added `GET /api/skills` endpoint returning the full skill registry.
+- Updated `POST /api/agent-runs` to accept optional `skillIds` list; defaults to enabled skills when omitted; rejects invalid skill IDs with 400.
+- Run records now include `skillIds` (list of active skill IDs) and `injectedPromptPreview` (truncated to 2000 chars).
+- Updated `app/web-ui/index.html` to add an "Active Skills" section with checkbox toggles in the Agent Console.
+- Updated `app/web-ui/app.js` to:
+  - Load skills from `GET /api/skills` on init
+  - Render skill toggles with checkboxes
+  - Include selected `skillIds` when creating agent runs
+  - Display which skills were used after run completion
+- Added CSS styles for skill toggles and skill-used badges.
+- Added `SkillRegistryTests` class with 11 unit tests covering registry structure, default states, enabled skills resolution, and prompt injection content.
+- Added 6 integration tests in `AsyncAgentRunTests` for `GET /api/skills`, invalid `skillIds` rejection, `skillIds` list validation, run record `skillIds` persistence, default skill injection, and `injectedPromptPreview` content.
+
+Verified:
+
+- `python -m py_compile app\api\server.py app\start.py`
+- `node --check app\web-ui\app.js`
+- `PYTHONPATH=src python -m unittest discover -s tests -p "test*.py" -v` (92 tests, all pass)
+
+Open:
+
+- The `source` field supports `builtin`, `local`, and `github` values, but only `builtin` skills are implemented. `local` and `github` sources are reserved for future extension.
+- External skill downloading/vendor is intentionally not implemented; `github` source is documentation-only.
+- The skill toggle UI is minimal; a future pass could add skill descriptions as tooltips or a dedicated Skills panel.
+- The injected prompt preview is truncated to 2000 chars in the run record to avoid excessive storage; the actual prompt sent to the agent is uncapped.
+- Reviewer correction: project context now points agents to the real QA artifact, `outputs/qa_report.md`.

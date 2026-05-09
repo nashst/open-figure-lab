@@ -182,6 +182,106 @@ _OPENCODE_BOUNDARY = (
 
 SUPPORTED_AGENT_IDS = {"opencode", "claude", "codex"}
 
+# --- Skill Registry ---
+
+SKILL_REGISTRY: dict[str, dict] = {
+    "open-figure-lab-core": {
+        "id": "open-figure-lab-core",
+        "title": "Open Figure Lab Core",
+        "description": "Core scientific figure production rules for Open Figure Lab. Enforces data safety, reproducibility, and the canonical workflow.",
+        "promptText": (
+            "You are working in Open Figure Lab, a local-first scientific figure production system.\n"
+            "The canonical workflow is: data -> figure spec -> skill renderer -> QA report -> revision diff -> export.\n"
+            "Key files in this project:\n"
+            "- spec/figure.yaml: the figure specification\n"
+            "- spec/data_manifest.yaml or data/: data sources\n"
+            "- outputs/preview.svg: rendered figure preview\n"
+            "- outputs/qa_report.md: QA validation results\n"
+            "\n"
+            "SAFETY RULES (MANDATORY):\n"
+            "- Do NOT fabricate or invent any scientific data, metrics, p-values, AUC, correlations, or statistical results.\n"
+            "- Do NOT modify files under data/ unless the user explicitly asks.\n"
+            "- All figure modifications must be reproducible from the spec and data.\n"
+            "- When done, list every file you changed.\n"
+        ),
+        "source": "builtin",
+        "enabled": True,
+    },
+    "scientific-figure-qa": {
+        "id": "scientific-figure-qa",
+        "title": "Scientific Figure QA",
+        "description": "QA constraints for scientific figures: axis labels, legends, statistical annotations, journal compliance.",
+        "promptText": (
+            "SCIENTIFIC FIGURE QA RULES:\n"
+            "- Ensure all axes have clear, descriptive labels with units where applicable.\n"
+            "- Legends must be readable and not overlap data elements.\n"
+            "- Statistical annotations (p-values, CI, n) must come from the data, never invented.\n"
+            "- Check journal preset compliance (font sizes, margins, figure dimensions).\n"
+            "- Verify color accessibility for colorblind readers.\n"
+            "- After changes, run the QA check and report any failures.\n"
+        ),
+        "source": "builtin",
+        "enabled": True,
+    },
+    "nature-style-figure": {
+        "id": "nature-style-figure",
+        "title": "Nature Style Figure",
+        "description": "Nature journal formatting requirements: typography, sizing, multi-panel layout, export standards.",
+        "promptText": (
+            "NATURE JOURNAL FIGURE STYLE:\n"
+            "- Use Arial or Helvetica font family, 5-7pt axis labels, 8-10pt titles.\n"
+            "- Multi-panel figures should use consistent spacing and alignment.\n"
+            "- Export at 300+ DPI for raster, vector formats preferred (SVG/PDF).\n"
+            "- Figure width: 89mm (single) or 183mm (double) per Nature guidelines.\n"
+            "- Minimize chartjunk; maximize data-ink ratio.\n"
+            "- Use Nature's recommended color palette for accessibility.\n"
+        ),
+        "source": "builtin",
+        "enabled": False,
+    },
+}
+
+
+def _get_enabled_skills(skill_ids: list[str] | None = None) -> list[dict]:
+    """Return skills to inject. If skill_ids is None, return enabled defaults."""
+    if skill_ids is None:
+        return [s for s in SKILL_REGISTRY.values() if s.get("enabled", False)]
+    result = []
+    for sid in skill_ids:
+        skill = SKILL_REGISTRY.get(sid)
+        if skill is None:
+            return []  # Signal invalid
+        result.append(skill)
+    return result
+
+
+def _build_injected_prompt(project_name: str, user_prompt: str, skills: list[dict]) -> str:
+    """Build the full prompt with skill injection and project context."""
+    project_dir = ROOT / "examples" / project_name
+
+    parts: list[str] = []
+
+    # Project context header
+    parts.append(f"=== PROJECT: {project_name} ===")
+    parts.append(f"Project directory: {project_dir}")
+    parts.append("Key files:")
+    parts.append(f"  - {project_dir / 'spec' / 'figure.yaml'}")
+    parts.append(f"  - {project_dir / 'spec' / 'data_manifest.yaml'}")
+    parts.append(f"  - {project_dir / 'outputs'}")
+    parts.append("")
+
+    # Inject skill prompts
+    for skill in skills:
+        parts.append(f"=== SKILL: {skill['title']} ===")
+        parts.append(skill["promptText"])
+        parts.append("")
+
+    # User prompt
+    parts.append("=== YOUR TASK ===")
+    parts.append(user_prompt)
+
+    return "\n".join(parts)
+
 
 def _build_agent_cmd(agent_id: str, model: str, reasoning: str, cwd: Path) -> tuple[list[str], bool]:
     """Build argv and return (cmd, promptViaStdin)."""
@@ -693,6 +793,8 @@ class APIHandler(SimpleHTTPRequestHandler):
             self._handle_get_session_config()
         elif path == "/api/agents":
             self._handle_get_agents(parsed.query)
+        elif path == "/api/skills":
+            self._handle_get_skills()
         elif path == "/api/spec":
             self._handle_get_spec()
         elif path == "/api/data-manifest":
@@ -814,8 +916,22 @@ class APIHandler(SimpleHTTPRequestHandler):
 
         reasoning = data.get("reasoning", "default")
 
-        # --- build full prompt with boundary ---
-        full_prompt = _OPENCODE_BOUNDARY + "\n" + prompt
+        # --- validate and resolve skills ---
+        skill_ids = data.get("skillIds")  # Optional: list of skill IDs or None for defaults
+        if skill_ids is not None:
+            if not isinstance(skill_ids, list):
+                self._json_response({"error": "skillIds must be a list"}, 400)
+                return
+            for sid in skill_ids:
+                if not isinstance(sid, str) or sid not in SKILL_REGISTRY:
+                    self._json_response({"error": f"Invalid skill ID: {sid!r}"}, 400)
+                    return
+
+        skills = _get_enabled_skills(skill_ids)
+        active_skill_ids = [s["id"] for s in skills]
+
+        # --- build full prompt with skill injection ---
+        full_prompt = _build_injected_prompt(project, prompt, skills)
 
         # --- create run record ---
         run_id = _generate_run_id()
@@ -829,6 +945,8 @@ class APIHandler(SimpleHTTPRequestHandler):
             "reasoning": reasoning,
             "project": project,
             "prompt": prompt,
+            "skillIds": active_skill_ids,
+            "injectedPromptPreview": full_prompt[:2000] + ("..." if len(full_prompt) > 2000 else ""),
             "createdAt": now,
             "command": [],
             "adapter": {},
@@ -949,6 +1067,11 @@ class APIHandler(SimpleHTTPRequestHandler):
 
     def _handle_get_agents(self, query: str = "") -> None:
         self._json_response({"agents": _cached_agents(force="refresh=1" in query)})
+
+    def _handle_get_skills(self) -> None:
+        """Return the skill registry."""
+        skills = list(SKILL_REGISTRY.values())
+        self._json_response({"skills": skills})
 
     def _handle_get_spec(self) -> None:
         spec_path = _get_project_root() / "spec" / "figure.yaml"
