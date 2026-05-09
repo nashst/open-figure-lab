@@ -23,12 +23,27 @@ _AGENT_CACHE: dict[str, object] = {"expires_at": 0.0, "agents": []}
 AGENT_DEFS = [
     {
         "id": "opencode",
-        "name": "OpenCode",
+        "name": "Sisyphus - Ultraworker",
         "bin": "opencode",
         "version_args": ["--version"],
         "models_args": ["models"],
+        "preferred_model": "xiaomi-token-plan-cn/mimo-v2.5-pro",
+        "preferred_reasoning": "high",
+        "model_labels": {
+            "xiaomi-token-plan-cn/mimo-v2.5-pro": "MiMo-V2.5-Pro Xiaomi Token Plan (China)",
+        },
         "fallback_models": [
             DEFAULT_MODEL_OPTION,
+            {
+                "id": "xiaomi-token-plan-cn/mimo-v2.5-pro",
+                "label": "MiMo-V2.5-Pro Xiaomi Token Plan (China)",
+            },
+        ],
+        "reasoning_options": [
+            {"id": "default", "label": "Default"},
+            {"id": "low", "label": "Low"},
+            {"id": "medium", "label": "Medium"},
+            {"id": "high", "label": "High"},
         ],
     },
     {
@@ -131,8 +146,9 @@ def _run_probe(command: str, args: list[str], timeout: float = 3.0) -> tuple[int
     return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
 
 
-def _parse_line_models(stdout: str, fallback: list[dict]) -> list[dict]:
+def _parse_line_models(stdout: str, fallback: list[dict], labels: dict[str, str] | None = None) -> list[dict]:
     """Parse one-model-id-per-line output, matching OpenDesign's basic model picker shape."""
+    labels = labels or {}
     seen = {"default"}
     models = [DEFAULT_MODEL_OPTION]
     for raw in stdout.splitlines():
@@ -140,7 +156,7 @@ def _parse_line_models(stdout: str, fallback: list[dict]) -> list[dict]:
         if not model_id or model_id.startswith("#") or model_id in seen:
             continue
         seen.add(model_id)
-        models.append({"id": model_id, "label": model_id})
+        models.append({"id": model_id, "label": labels.get(model_id, model_id)})
     if len(models) == 1:
         return fallback
     return models
@@ -162,7 +178,7 @@ def _detect_agents() -> list[dict]:
             if agent_def.get("models_args"):
                 model_code, model_stdout, _model_stderr = _run_probe(executable, agent_def["models_args"], timeout=5.0)
                 if model_code == 0 and model_stdout:
-                    models = _parse_line_models(model_stdout, models)
+                    models = _parse_line_models(model_stdout, models, agent_def.get("model_labels"))
 
         detected.append({
             "id": agent_def["id"],
@@ -172,6 +188,8 @@ def _detect_agents() -> list[dict]:
             "path": executable,
             "version": version,
             "models": models,
+            "preferredModel": agent_def.get("preferred_model"),
+            "preferredReasoning": agent_def.get("preferred_reasoning"),
             "reasoningOptions": agent_def.get("reasoning_options", []),
         })
     return detected

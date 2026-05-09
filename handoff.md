@@ -156,3 +156,21 @@ Open:
 - Agent selection is persisted only in browser memory for this MVP pass.
 - Agent streaming/chat execution is not wired yet; the Lab still uses validate/render/QA CLI API endpoints.
 - `/api/agents` currently detects local binaries and models but does not verify auth/account health.
+
+## 2026-05-09 Codex + OpenCode - Sisyphus Runtime Default
+
+Changed:
+
+- Assigned OpenCode a planning task for the next agent execution/streaming stage.
+- Added `docs/opencode-agent-runtime-plan.md` from that OpenCode task.
+- Updated the OpenCode runtime label to `Sisyphus - Ultraworker`.
+- Set OpenCode's preferred model to `xiaomi-token-plan-cn/mimo-v2.5-pro` with UI label `MiMo-V2.5-Pro Xiaomi Token Plan (China)`.
+- Set OpenCode's preferred reasoning/variant selection to `high`.
+
+Verified:
+
+- `opencode models` contains `xiaomi-token-plan-cn/mimo-v2.5-pro`.
+
+Open:
+
+- `.sisyphus/` was created by OpenCode as local runtime state and is intentionally not part of the committed product surface unless we later decide to track it.

@@ -76,7 +76,8 @@ class OpenFigureLabApp {
             const res = await fetch(`${this.apiBase}/api/agents${force ? "?refresh=1" : ""}`);
             const data = await res.json();
             this.agents = Array.isArray(data.agents) ? data.agents : [];
-            const firstAvailable = this.agents.find((agent) => agent.available);
+        const firstAvailable = this.agents.find((agent) => agent.id === "opencode" && agent.available)
+            || this.agents.find((agent) => agent.available);
             this.selectedAgentId = firstAvailable ? firstAvailable.id : null;
             this.renderAgentPicker();
         } catch (err) {
@@ -131,7 +132,11 @@ class OpenFigureLabApp {
             option.textContent = model.label || model.id;
             this.modelSelect.appendChild(option);
         }
-        this.selectedModel = models[0].id;
+        const preferredModel = agent && agent.preferredModel && models.some((model) => model.id === agent.preferredModel)
+            ? agent.preferredModel
+            : models[0].id;
+        this.modelSelect.value = preferredModel;
+        this.selectedModel = preferredModel;
 
         const reasoningOptions = agent && Array.isArray(agent.reasoningOptions) ? agent.reasoningOptions : [];
         this.reasoningSelect.innerHTML = "";
@@ -142,7 +147,11 @@ class OpenFigureLabApp {
             this.reasoningSelect.appendChild(option);
         }
         this.reasoningField.classList.toggle("hidden", reasoningOptions.length === 0);
-        this.selectedReasoning = reasoningOptions.length > 0 ? reasoningOptions[0].id : "default";
+        const preferredReasoning = agent && agent.preferredReasoning && reasoningOptions.some((option) => option.id === agent.preferredReasoning)
+            ? agent.preferredReasoning
+            : reasoningOptions.length > 0 ? reasoningOptions[0].id : "default";
+        this.reasoningSelect.value = preferredReasoning;
+        this.selectedReasoning = preferredReasoning;
     }
 
     launchLab() {
